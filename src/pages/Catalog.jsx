@@ -1,0 +1,331 @@
+// src/pages/Catalog.jsx
+import { useState, useEffect, useCallback } from 'react'
+import { getProducts, getCategories, getSuppliers, createProduct, updateProduct, archiveProduct, logPriceChange, getPriceHistory } from '../lib/supabase'
+import { fmt, pct, calcMargin, marginClass, catColorMap, formatDate } from '../lib/utils'
+import { useAuth } from '../App'
+
+export default function Catalog() {
+  const { user } = useAuth()
+  const [products,   setProducts]   = useState([])
+  const [categories, setCategories] = useState([])
+  const [suppliers,  setSuppliers]  = useState([])
+  const [search,     setSearch]     = useState('')
+  const [catFilter,  setCatFilter]  = useState('')
+  const [loading,    setLoading]    = useState(true)
+  const [modal,      setModal]      = useState(null) // null | 'new' | product_obj
+
+  const load = useCallback(async () => {
+    const [p, c, s] = await Promise.all([getProducts(), getCategories(), getSuppliers()])
+    setProducts(p.data || [])
+    setCategories(c.data || [])
+    setSuppliers(s.data || [])
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const filtered = products.filter(p => {
+    const q = search.toLowerCase()
+    const matchSearch = !q || p.name.toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q)
+    const matchCat = !catFilter || p.categories?.name === catFilter
+    return matchSearch && matchCat
+  })
+
+  return (
+    <>
+      <div className="topbar">
+        <div className="topbar-title">Catálogo de Productos</div>
+        <div className="topbar-actions">
+          <button className="btn btn-primary" onClick={() => setModal('new')}>+ Nuevo Producto</button>
+        </div>
+      </div>
+
+      <div className="page">
+        <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="search-wrap" style={{ flex: 1, minWidth: 200 }}>
+            <span className="search-icon">⌕</span>
+            <input className="form-input" placeholder="Buscar por nombre o SKU..." value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+          <select className="form-select" style={{ width: 180 }} value={catFilter} onChange={e => setCatFilter(e.target.value)}>
+            <option value="">Todas las categorías</option>
+            {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+          </select>
+          <span style={{ fontSize: 12, color: 'var(--white-3)', whiteSpace: 'nowrap' }}>{filtered.length} productos</span>
+        </div>
+
+        <div className="card">
+          {loading ? (
+            <p style={{ color: 'var(--white-3)', fontSize: 13 }}>Cargando productos...</p>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>SKU</th><th>Producto</th><th>Categoría</th><th>Proveedor</th>
+                    <th>Costo Prom.</th><th>P. Venta</th><th>Margen</th><th>Stock</th><th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.length === 0 && (
+                    <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: 'var(--white-3)' }}>
+                      {search || catFilter ? 'Sin resultados para esta búsqueda' : 'Sin productos aún. Agrega el primero o importa desde Google Sheets.'}
+                    </td></tr>
+                  )}
+                  {filtered.map(p => {
+                    const m = calcMargin(p.avg_cost, p.sale_price)
+                    const hasCost = p.avg_cost > 0
+                    return (
+                      <tr key={p.id}>
+                        <td className="td-mono td-muted" style={{ fontSize: 11 }}>{p.sku || '—'}</td>
+                        <td className="td-bold">{p.name}</td>
+                        <td>
+                          <span className={`badge ${catColorMap[p.categories?.name] || 'badge-muted'}`}>
+                            {p.categories?.name || '—'}
+                          </span>
+                        </td>
+                        <td className="td-muted" style={{ fontSize: 12 }}>{p.suppliers?.name?.substring(0, 22) || '—'}</td>
+                        <td className="td-mono" style={{ color: hasCost ? 'var(--white-2)' : 'var(--white-3)', fontSize: 12 }}>
+                          {hasCost ? fmt(p.avg_cost) : <span style={{ fontStyle: 'italic' }}>pendiente</span>}
+                        </td>
+                        <td className="td-gold">{fmt(p.sale_price)}</td>
+                        <td>
+                          {hasCost
+                            ? <span className={`${marginClass(m)}`} style={{ fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 500 }}>{pct(m)}</span>
+                            : <span style={{ fontSize: 11, color: 'var(--white-3)' }}>—</span>
+                          }
+                        </td>
+                        <td>
+                          <span className={`badge ${p.stock === null ? 'badge-muted' : p.stock < 5 ? 'badge-danger' : p.stock < 10 ? 'badge-warning' : 'badge-success'}`}>
+                            {p.stock ?? '—'}
+                          </span>
+                        </td>
+                        <td>
+                          <button className="btn btn-ghost btn-sm" onClick={() => setModal(p)}>Editar</button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {modal === 'new' && (
+        <ProductModal
+          categories={categories} suppliers={suppliers}
+          onClose={() => setModal(null)} onSave={load}
+          userEmail={user?.email}
+        />
+      )}
+      {modal && modal !== 'new' && (
+        <ProductModal
+          product={modal} categories={categories} suppliers={suppliers}
+          onClose={() => setModal(null)} onSave={load}
+          userEmail={user?.email}
+        />
+      )}
+    </>
+  )
+}
+
+// ── Product Modal ─────────────────────────────────────────────────
+function ProductModal({ product, categories, suppliers, onClose, onSave, userEmail }) {
+  const isNew = !product
+  const [form, setForm] = useState({
+    name:        product?.name        || '',
+    sku:         product?.sku         || '',
+    category_id: product?.category_id || '',
+    supplier_id: product?.supplier_id || '',
+    unit:        product?.unit        || 'unidad',
+    avg_cost:    product?.avg_cost    || '',
+    sale_price:  product?.sale_price  || '',
+    stock:       product?.stock       ?? 0,
+    notes:       product?.notes       || '',
+  })
+  const [history, setHistory] = useState([])
+  const [saving,  setSaving]  = useState(false)
+  const [error,   setError]   = useState('')
+  const [tab,     setTab]     = useState('data') // 'data' | 'history'
+
+  useEffect(() => {
+    if (product?.id) {
+      getPriceHistory(product.id).then(({ data }) => setHistory(data || []))
+    }
+  }, [product])
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const margin = form.avg_cost && form.sale_price
+    ? calcMargin(parseFloat(form.avg_cost), parseFloat(form.sale_price))
+    : null
+
+  const handleSave = async () => {
+    if (!form.name.trim()) { setError('El nombre es requerido'); return }
+    if (!form.sale_price)  { setError('El precio de venta es requerido'); return }
+    setSaving(true)
+    setError('')
+
+    const payload = {
+      ...form,
+      avg_cost:   form.avg_cost   ? parseFloat(form.avg_cost)   : 0,
+      sale_price: parseFloat(form.sale_price),
+      stock:      parseInt(form.stock || 0),
+      category_id: form.category_id || null,
+      supplier_id: form.supplier_id || null,
+    }
+
+    if (isNew) {
+      const { error } = await createProduct(payload)
+      if (error) { setError(error.message); setSaving(false); return }
+    } else {
+      // log price changes
+      if (product.avg_cost !== payload.avg_cost)
+        await logPriceChange(product.id, 'avg_cost', product.avg_cost, payload.avg_cost, userEmail)
+      if (product.sale_price !== payload.sale_price)
+        await logPriceChange(product.id, 'sale_price', product.sale_price, payload.sale_price, userEmail)
+
+      const { error } = await updateProduct(product.id, payload)
+      if (error) { setError(error.message); setSaving(false); return }
+    }
+
+    await onSave()
+    onClose()
+  }
+
+  const handleArchive = async () => {
+    if (!confirm('¿Archivar este producto? Seguirá en cotizaciones existentes.')) return
+    await archiveProduct(product.id)
+    await onSave()
+    onClose()
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal modal-lg">
+        <div className="modal-header">
+          <div className="modal-title">{isNew ? 'Nuevo Producto' : 'Editar Producto'}</div>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+
+        {!isNew && (
+          <div className="tabs">
+            <button className={`tab ${tab === 'data' ? 'active' : ''}`} onClick={() => setTab('data')}>Datos</button>
+            <button className={`tab ${tab === 'history' ? 'active' : ''}`} onClick={() => setTab('history')}>Historial de Precios</button>
+          </div>
+        )}
+
+        {tab === 'data' && (
+          <>
+            <div className="col-span-2 form-group">
+              <label className="form-label">Nombre del Producto *</label>
+              <input className="form-input" value={form.name} onChange={e => set('name', e.target.value)} placeholder="Ej: Aceite de Oliva Extra Virgen 5L" />
+            </div>
+            <div className="form-grid-3">
+              <div className="form-group">
+                <label className="form-label">SKU / Código</label>
+                <input className="form-input" value={form.sku} onChange={e => set('sku', e.target.value)} placeholder="ALM-001" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Unidad</label>
+                <select className="form-select" value={form.unit} onChange={e => set('unit', e.target.value)}>
+                  {['unidad','kg','litro','botella','caja','paquete','bidón','set','spray','frasco','pack','rollo','metro','juego'].map(u => (
+                    <option key={u}>{u}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Stock Actual</label>
+                <input className="form-input" type="number" value={form.stock} onChange={e => set('stock', e.target.value)} />
+              </div>
+            </div>
+            <div className="form-grid-2">
+              <div className="form-group">
+                <label className="form-label">Categoría</label>
+                <select className="form-select" value={form.category_id} onChange={e => set('category_id', e.target.value)}>
+                  <option value="">Sin categoría</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Proveedor</label>
+                <select className="form-select" value={form.supplier_id} onChange={e => set('supplier_id', e.target.value)}>
+                  <option value="">Sin proveedor</option>
+                  {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="form-grid-2">
+              <div className="form-group">
+                <label className="form-label">Costo Promedio ($)</label>
+                <input className="form-input" type="number" step="0.01" value={form.avg_cost}
+                  onChange={e => set('avg_cost', e.target.value)} placeholder="0.00 — puedes dejarlo vacío" />
+                <div className="form-hint">Déjalo vacío si aún no tienes el costo de factura</div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Precio de Venta ($) *</label>
+                <input className="form-input" type="number" step="0.01" value={form.sale_price}
+                  onChange={e => set('sale_price', e.target.value)} placeholder="0.00" />
+              </div>
+            </div>
+
+            {margin !== null && (
+              <div style={{ background: 'var(--navy-3)', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13 }}>
+                Margen: <span className={marginClass(margin)} style={{ fontWeight: 600 }}>{pct(margin)}</span>
+                {' · '}Ganancia: <span style={{ color: 'var(--gold)' }}>{fmt(parseFloat(form.sale_price) - parseFloat(form.avg_cost))}</span> por {form.unit}
+                {parseFloat(form.avg_cost) >= parseFloat(form.sale_price) && (
+                  <span style={{ color: 'var(--danger)', marginLeft: 12 }}>⚠ El costo supera el precio de venta</span>
+                )}
+              </div>
+            )}
+
+            <div className="form-group">
+              <label className="form-label">Notas internas</label>
+              <input className="form-input" value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Observaciones opcionales..." />
+            </div>
+
+            {error && <div className="alert alert-danger">{error}</div>}
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+              {!isNew
+                ? <button className="btn btn-danger" onClick={handleArchive}>Archivar</button>
+                : <span />
+              }
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+                <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                  {saving ? 'Guardando...' : isNew ? 'Crear Producto' : 'Guardar Cambios'}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {tab === 'history' && (
+          <div>
+            {history.length === 0
+              ? <p style={{ color: 'var(--white-3)', fontSize: 13 }}>Sin cambios de precio registrados</p>
+              : (
+                <table>
+                  <thead><tr><th>Campo</th><th>Anterior</th><th>Nuevo</th><th>Por</th><th>Fecha</th></tr></thead>
+                  <tbody>
+                    {history.map(h => (
+                      <tr key={h.id}>
+                        <td><span className="badge badge-muted">{h.field === 'avg_cost' ? 'Costo' : 'P. Venta'}</span></td>
+                        <td className="td-mono" style={{ color: 'var(--white-3)' }}>{fmt(h.old_value)}</td>
+                        <td className="td-mono td-gold">{fmt(h.new_value)}</td>
+                        <td className="td-muted" style={{ fontSize: 12 }}>{h.changed_by}</td>
+                        <td className="td-muted" style={{ fontSize: 12 }}>{formatDate(h.created_at?.split('T')[0])}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )
+            }
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
