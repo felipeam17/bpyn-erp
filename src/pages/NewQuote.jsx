@@ -20,6 +20,9 @@ export default function NewQuote() {
   const [notes,       setNotes]       = useState('')
   const [saving,      setSaving]      = useState(false)
   const [error,       setError]       = useState('')
+  const [mode,        setMode]        = useState('manual') // 'manual' | 'paste'
+  const [pasteText,   setPasteText]   = useState('')
+  const [pasteResult, setPasteResult] = useState(null) // { matched, unmatched }
 
   const searchRef = useRef(null)
 
@@ -36,11 +39,11 @@ export default function NewQuote() {
     : []
 
   // ── Add / remove / update items ──────────────────────────────────
-  const addProduct = (p) => {
+  const addProduct = (p, qty = 1) => {
     setItems(prev => {
       const existing = prev.find(i => i.product_id === p.id)
       if (existing) {
-        return prev.map(i => i.product_id === p.id ? { ...i, qty: i.qty + 1 } : i)
+        return prev.map(i => i.product_id === p.id ? { ...i, qty: i.qty + qty } : i)
       }
       return [...prev, {
         product_id:   p.id,
@@ -49,7 +52,7 @@ export default function NewQuote() {
         unit:         p.unit,
         unit_cost:    p.avg_cost || 0,
         unit_price:   p.sale_price,
-        qty:          1,
+        qty,
       }]
     })
     setSearch('')
@@ -63,6 +66,79 @@ export default function NewQuote() {
 
   const removeItem = (productId) => {
     setItems(prev => prev.filter(i => i.product_id !== productId))
+  }
+
+  // ── Paste list parser ────────────────────────────────────────────
+  const parsePasteList = () => {
+    if (!pasteText.trim()) return
+    const lines = pasteText.trim().split('\n').filter(l => l.trim())
+    const matched = []
+    const unmatched = []
+
+    lines.forEach(line => {
+      const raw = line.trim()
+      if (!raw) return
+
+      // Try to extract quantity from start or end of line
+      // Patterns: "2 Aceite de Oliva", "Aceite de Oliva x2", "Aceite de Oliva - 2", "Aceite de Oliva  2"
+      let qty = 1
+      let name = raw
+
+      // Pattern: starts with number then space/tab
+      const startNum = raw.match(/^(\d+(?:\.\d+)?)\s+(.+)/)
+      if (startNum) {
+        qty = parseFloat(startNum[1])
+        name = startNum[2].trim()
+      } else {
+        // Pattern: ends with x2, -2, *2, or just a number
+        const endNum = raw.match(/^(.+?)[\s\-x*×]+(\d+(?:\.\d+)?)$/)
+        if (endNum) {
+          name = endNum[1].trim()
+          qty = parseFloat(endNum[2])
+        }
+      }
+
+      // Now fuzzy-match name against products
+      const nameLower = name.toLowerCase()
+      const words = nameLower.split(/\s+/).filter(w => w.length > 2)
+
+      let bestMatch = null
+      let bestScore = 0
+
+      products.forEach(p => {
+        const pName = p.name.toLowerCase()
+        const pSku  = (p.sku || '').toLowerCase()
+
+        // Exact SKU match
+        if (pSku && nameLower.includes(pSku)) { bestMatch = p; bestScore = 100; return }
+
+        // Score by word overlap
+        let score = 0
+        words.forEach(w => { if (pName.includes(w)) score += w.length })
+
+        // Bonus for starting with same word
+        if (pName.startsWith(words[0])) score += 10
+
+        if (score > bestScore) { bestScore = score; bestMatch = p }
+      })
+
+      // Require minimum score to consider it a match (at least 4 chars matched)
+      if (bestMatch && bestScore >= 4) {
+        matched.push({ product: bestMatch, qty, originalLine: raw })
+      } else {
+        unmatched.push({ originalLine: raw, qty, name })
+      }
+    })
+
+    setPasteResult({ matched, unmatched })
+  }
+
+  const applyPasteMatches = () => {
+    if (!pasteResult) return
+    pasteResult.matched.forEach(({ product, qty }) => addProduct(product, qty))
+    setPasteText('')
+    setPasteResult(null)
+    setMode('manual')
   }
 
   // ── Totals ───────────────────────────────────────────────────────
@@ -147,54 +223,173 @@ export default function NewQuote() {
           </div>
         </div>
 
-        {/* Product search */}
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div className="card-title" style={{ marginBottom: 14 }}>Agregar Productos</div>
-          <div style={{ position: 'relative' }}>
-            <div className="search-wrap">
-              <span className="search-icon">⌕</span>
-              <input
-                ref={searchRef}
-                className="form-input"
-                value={search}
-                onChange={e => { setSearch(e.target.value); setPickerOpen(true) }}
-                onFocus={() => search && setPickerOpen(true)}
-                placeholder="Busca por nombre o SKU para agregar..."
+        {/* Mode toggle */}
+        <div className="tabs" style={{ marginBottom: 16 }}>
+          <button className={`tab ${mode === 'manual' ? 'active' : ''}`} onClick={() => setMode('manual')}>
+            Buscar productos
+          </button>
+          <button className={`tab ${mode === 'paste' ? 'active' : ''}`} onClick={() => setMode('paste')}>
+            Pegar lista desde Excel / Sheets
+          </button>
+        </div>
+
+        {/* ── PASTE MODE ── */}
+        {mode === 'paste' && (
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-header">
+              <div className="card-title">Pegar lista de productos</div>
+            </div>
+            <div className="alert alert-info" style={{ marginBottom: 14 }}>
+              Copia y pega tu lista desde Excel o Google Sheets. El sistema busca cada producto en el catálogo automáticamente.<br />
+              <strong>Formatos aceptados por fila:</strong> "2 Aceite de Oliva" · "Aceite de Oliva x2" · "Aceite de Oliva - 3" · "Champagne 1"
+            </div>
+            <div className="form-group">
+              <label className="form-label">Lista de productos (una por línea)</label>
+              <textarea
+                className="form-textarea"
+                style={{ minHeight: 160, fontFamily: 'var(--mono)', fontSize: 13 }}
+                placeholder={'Ej:\n2 Aceite de Oliva Extra Virgen\nDetergente Industrial x3\nSalmón Noruego - 5\nChampagne Dom Pérignon 2'}
+                value={pasteText}
+                onChange={e => { setPasteText(e.target.value); setPasteResult(null) }}
               />
             </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button className="btn btn-ghost" onClick={() => { setPasteText(''); setPasteResult(null) }}>Limpiar</button>
+              <button className="btn btn-primary" onClick={parsePasteList} disabled={!pasteText.trim()}>
+                Buscar en catálogo →
+              </button>
+            </div>
 
-            {pickerOpen && filtered.length > 0 && (
-              <div className="picker-dropdown" style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, marginTop: 4 }}>
-                {filtered.map(p => (
-                  <div key={p.id} className="picker-item" onClick={() => addProduct(p)}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 500 }}>{p.name}</div>
-                      <div style={{ fontSize: 11, color: 'var(--white-3)' }}>
-                        {p.sku || '—'} · {p.categories?.name || '—'} · {p.unit}
-                        {p.avg_cost > 0 && (
-                          <> · <span style={{ color: 'var(--white-2)' }}>
-                            Margen: <span className={marginClass(calcMargin(p.avg_cost, p.sale_price))}>
-                              {pct(calcMargin(p.avg_cost, p.sale_price))}
-                            </span>
-                          </span></>
-                        )}
-                      </div>
+            {/* Results */}
+            {pasteResult && (
+              <div style={{ marginTop: 20 }}>
+                <div className="divider" />
+
+                {pasteResult.matched.length > 0 && (
+                  <>
+                    <div style={{ fontSize: 11, color: 'var(--success)', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 10, fontWeight: 500 }}>
+                      ✓ {pasteResult.matched.length} productos encontrados
                     </div>
-                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      <div style={{ fontFamily: 'var(--mono)', color: 'var(--gold)', fontSize: 14, fontWeight: 500 }}>{fmt(p.sale_price)}</div>
-                      <div style={{ fontSize: 10, color: 'var(--white-3)' }}>por {p.unit}</div>
+                    <div style={{ marginBottom: 16 }}>
+                      {pasteResult.matched.map((m, i) => (
+                        <div key={i} style={{
+                          display: 'flex', alignItems: 'center', gap: 12,
+                          padding: '9px 14px', background: 'rgba(76,175,125,0.06)',
+                          border: '1px solid rgba(76,175,125,0.2)',
+                          borderRadius: 8, marginBottom: 6
+                        }}>
+                          <span style={{ fontSize: 13, color: 'var(--success)' }}>✓</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 13 }}>
+                              <span style={{ color: 'var(--white-3)', fontFamily: 'var(--mono)', fontSize: 11 }}>"{m.originalLine}"</span>
+                              <span style={{ color: 'var(--white-3)', margin: '0 8px' }}>→</span>
+                              <span style={{ fontWeight: 500 }}>{m.product.name}</span>
+                            </div>
+                          </div>
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--white-3)' }}>
+                            {m.qty} × {fmt(m.product.sale_price)}
+                          </span>
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--gold)', fontWeight: 500 }}>
+                            {fmt(m.qty * m.product.sale_price)}
+                          </span>
+                        </div>
+                      ))}
                     </div>
-                    <button className="btn btn-primary btn-sm">+</button>
+                  </>
+                )}
+
+                {pasteResult.unmatched.length > 0 && (
+                  <>
+                    <div style={{ fontSize: 11, color: 'var(--warning)', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 10, fontWeight: 500 }}>
+                      ⚠ {pasteResult.unmatched.length} no encontrados en catálogo
+                    </div>
+                    <div style={{ marginBottom: 16 }}>
+                      {pasteResult.unmatched.map((u, i) => (
+                        <div key={i} style={{
+                          padding: '8px 14px', background: 'rgba(224,160,82,0.06)',
+                          border: '1px solid rgba(224,160,82,0.2)',
+                          borderRadius: 8, marginBottom: 6,
+                          fontSize: 13, color: 'var(--warning)'
+                        }}>
+                          ⚠ "{u.originalLine}" — no está en el catálogo, agrégalo manualmente
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {pasteResult.matched.length > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: 13, color: 'var(--white-3)' }}>
+                      Total estimado: <span style={{ color: 'var(--gold)', fontFamily: 'var(--mono)', fontWeight: 600 }}>
+                        {fmt(pasteResult.matched.reduce((a, m) => a + m.qty * m.product.sale_price, 0))}
+                      </span>
+                    </div>
+                    <button className="btn btn-primary" onClick={applyPasteMatches}>
+                      Agregar {pasteResult.matched.length} productos a la cotización →
+                    </button>
                   </div>
-                ))}
+                )}
               </div>
             )}
           </div>
-        </div>
+        )}
+
+        {/* ── MANUAL MODE ── */}
+        {mode === 'manual' && (
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-title" style={{ marginBottom: 14 }}>Agregar Productos</div>
+            <div style={{ position: 'relative' }}>
+              <div className="search-wrap">
+                <span className="search-icon">⌕</span>
+                <input
+                  ref={searchRef}
+                  className="form-input"
+                  value={search}
+                  onChange={e => { setSearch(e.target.value); setPickerOpen(true) }}
+                  onFocus={() => search && setPickerOpen(true)}
+                  placeholder="Busca por nombre o SKU para agregar..."
+                />
+              </div>
+
+              {pickerOpen && filtered.length > 0 && (
+                <div className="picker-dropdown" style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, marginTop: 4 }}>
+                  {filtered.map(p => (
+                    <div key={p.id} className="picker-item" onClick={() => addProduct(p)}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500 }}>{p.name}</div>
+                        <div style={{ fontSize: 11, color: 'var(--white-3)' }}>
+                          {p.sku || '—'} · {p.categories?.name || '—'} · {p.unit}
+                          {p.avg_cost > 0 && (
+                            <> · <span style={{ color: 'var(--white-2)' }}>
+                              Margen: <span className={marginClass(calcMargin(p.avg_cost, p.sale_price))}>
+                                {pct(calcMargin(p.avg_cost, p.sale_price))}
+                              </span>
+                            </span></>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <div style={{ fontFamily: 'var(--mono)', color: 'var(--gold)', fontSize: 14, fontWeight: 500 }}>{fmt(p.sale_price)}</div>
+                        <div style={{ fontSize: 10, color: 'var(--white-3)' }}>por {p.unit}</div>
+                      </div>
+                      <button className="btn btn-primary btn-sm">+</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Items list */}
         {items.length === 0 ? (
-          <div className="alert alert-info">Busca y agrega productos para armar la cotización.</div>
+          <div className="alert alert-info">
+            {mode === 'manual'
+              ? 'Busca y agrega productos para armar la cotización.'
+              : 'Pega tu lista arriba y agrega los productos encontrados.'
+            }
+          </div>
         ) : (
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-header">
@@ -202,7 +397,6 @@ export default function NewQuote() {
               <div style={{ fontSize: 12, color: 'var(--white-3)' }}>Puedes ajustar precio y cantidad por ítem</div>
             </div>
 
-            {/* Header row */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 90px 90px 36px', gap: 8, padding: '0 0 8px', fontSize: 10, color: 'var(--white-3)', textTransform: 'uppercase', letterSpacing: 1.5 }}>
               <div>Producto</div><div style={{ textAlign: 'right' }}>Cant.</div>
               <div style={{ textAlign: 'right' }}>P. Unit ($)</div>
@@ -247,8 +441,7 @@ export default function NewQuote() {
                   </div>
                   <div>
                     <button onClick={() => removeItem(item.product_id)}
-                      style={{ background: 'none', border: 'none', color: 'var(--white-3)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}
-                      title="Eliminar">×</button>
+                      style={{ background: 'none', border: 'none', color: 'var(--white-3)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>×</button>
                   </div>
                 </div>
               )
