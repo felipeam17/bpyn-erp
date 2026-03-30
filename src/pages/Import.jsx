@@ -55,6 +55,17 @@ export default function Import() {
     setStep(2)
   }
 
+  const parsePrice = (val) => {
+    if (!val) return 0
+    let s = val.toString().replace(/[$€£¥\s]/g, '')
+    if (s.includes('.') && s.includes(',')) { s = s.replace(/,/g, '') }
+    else if (s.includes(',') && !s.includes('.')) {
+      const parts = s.split(',')
+      s = parts[parts.length-1].length <= 2 ? s.replace(',', '.') : s.replace(/,/g, '')
+    }
+    return parseFloat(s) || 0
+  }
+
   // ── Step 2 → 3: Build preview ────────────────────────────────────
   const buildPreview = () => {
     if (mapping.nombre === undefined) { alert('Debes mapear al menos la columna "Nombre del Producto"'); return }
@@ -62,8 +73,8 @@ export default function Import() {
 
     const prev = rows.map(row => ({
       name:        row[mapping.nombre]       || '',
-      sale_price:  parseFloat(row[mapping.precio_venta]?.replace(',', '.')) || 0,
-      avg_cost:    mapping.costo    !== undefined ? (parseFloat(row[mapping.costo]?.replace(',', '.'))   || 0) : 0,
+      sale_price:  parsePrice(row[mapping.precio_venta]),
+      avg_cost:    mapping.costo    !== undefined ? parsePrice(row[mapping.costo]) : 0,
       category:    mapping.categoria !== undefined ? row[mapping.categoria]  || '' : '',
       sku:         mapping.sku       !== undefined ? row[mapping.sku]        || '' : '',
       supplier:    mapping.proveedor !== undefined ? row[mapping.proveedor]  || '' : '',
