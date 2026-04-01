@@ -13,6 +13,34 @@ export default function Catalog() {
   const [catFilter,  setCatFilter]  = useState('')
   const [loading,    setLoading]    = useState(true)
   const [modal,      setModal]      = useState(null) // null | 'new' | product_obj
+  const [selected,   setSelected]   = useState(new Set()) // selected product ids
+  const [deleting,   setDeleting]   = useState(false)
+
+  const toggleSelect = (id) => setSelected(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+
+  const toggleAll = () => {
+    if (selected.size === filtered.length && filtered.length > 0) {
+      setSelected(new Set())
+    } else {
+      setSelected(new Set(filtered.map(p => p.id)))
+    }
+  }
+
+  const deleteSelected = async () => {
+    if (selected.size === 0) return
+    if (!confirm(`¿Eliminar permanentemente ${selected.size} producto(s)? Esta acción no se puede deshacer.`)) return
+    setDeleting(true)
+    for (const id of selected) {
+      await archiveProduct(id)
+    }
+    setSelected(new Set())
+    setDeleting(false)
+    await load()
+  }
 
   const load = useCallback(async () => {
     const [p, c, s] = await Promise.all([getProducts(), getCategories(), getSuppliers()])
@@ -36,6 +64,11 @@ export default function Catalog() {
       <div className="topbar">
         <div className="topbar-title">Catálogo de Productos</div>
         <div className="topbar-actions">
+          {selected.size > 0 && (
+            <button className="btn btn-danger" onClick={deleteSelected} disabled={deleting}>
+              {deleting ? 'Eliminando...' : `✕ Eliminar ${selected.size} seleccionado${selected.size > 1 ? 's' : ''}`}
+            </button>
+          )}
           <button className="btn btn-primary" onClick={() => setModal('new')}>+ Nuevo Producto</button>
         </div>
       </div>
@@ -50,7 +83,12 @@ export default function Catalog() {
             <option value="">Todas las categorías</option>
             {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
           </select>
-          <span style={{ fontSize: 12, color: 'var(--white-3)', whiteSpace: 'nowrap' }}>{filtered.length} productos</span>
+          <button className="btn btn-ghost btn-sm" onClick={toggleAll} style={{ whiteSpace: 'nowrap' }}>
+            {selected.size === filtered.length && filtered.length > 0 ? '☐ Deseleccionar todos' : '☑ Seleccionar todos'}
+          </button>
+          <span style={{ fontSize: 12, color: 'var(--white-3)', whiteSpace: 'nowrap' }}>
+            {selected.size > 0 ? selected.size + ' de ' + filtered.length + ' seleccionados' : filtered.length + ' productos'}
+          </span>
         </div>
 
         <div className="card">
@@ -61,13 +99,20 @@ export default function Catalog() {
               <table>
                 <thead>
                   <tr>
+                    <th style={{ width: 36, textAlign: 'center' }}>
+                      <input type="checkbox"
+                        checked={filtered.length > 0 && selected.size === filtered.length}
+                        onChange={toggleAll}
+                        style={{ cursor: 'pointer', accentColor: 'var(--gold)' }}
+                      />
+                    </th>
                     <th>SKU</th><th>Producto</th><th>Categoría</th><th>Proveedor</th>
                     <th>Costo Prom.</th><th>P. Venta</th><th>Margen</th><th>Stock</th><th></th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 && (
-                    <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: 'var(--white-3)' }}>
+                    <tr><td colSpan={10} style={{ textAlign: 'center', padding: 32, color: 'var(--white-3)' }}>
                       {search || catFilter ? 'Sin resultados para esta búsqueda' : 'Sin productos aún. Agrega el primero o importa desde Google Sheets.'}
                     </td></tr>
                   )}
@@ -75,7 +120,14 @@ export default function Catalog() {
                     const m = calcMargin(p.avg_cost, p.sale_price)
                     const hasCost = p.avg_cost > 0
                     return (
-                      <tr key={p.id}>
+                      <tr key={p.id} style={{ background: selected.has(p.id) ? 'rgba(201,168,76,0.06)' : undefined }}>
+                        <td style={{ textAlign: 'center' }}>
+                          <input type="checkbox"
+                            checked={selected.has(p.id)}
+                            onChange={() => toggleSelect(p.id)}
+                            style={{ cursor: 'pointer', accentColor: 'var(--gold)' }}
+                          />
+                        </td>
                         <td className="td-mono td-muted" style={{ fontSize: 11 }}>{p.sku || '—'}</td>
                         <td className="td-bold">{p.name}</td>
                         <td>
@@ -100,7 +152,12 @@ export default function Catalog() {
                           </span>
                         </td>
                         <td>
-                          <button className="btn btn-ghost btn-sm" onClick={() => setModal(p)}>Editar</button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => setModal(p)} style={{ marginRight: 4 }}>Editar</button>
+                          <button className="btn btn-danger btn-sm" onClick={async () => {
+                            if (!confirm(`¿Eliminar "${p.name}"?`)) return
+                            await archiveProduct(p.id)
+                            await load()
+                          }}>✕</button>
                         </td>
                       </tr>
                     )
