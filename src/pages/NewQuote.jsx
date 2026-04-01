@@ -120,24 +120,47 @@ export default function NewQuote() {
         }
       }
 
-      // Fuzzy-match name against products
-      const nameLower = name.toLowerCase()
+      // Match name against products — strict only
+      const nameLower = name.toLowerCase().trim()
       const words = nameLower.split(/\s+/).filter(w => w.length > 2)
 
       let bestMatch = null
       let bestScore = 0
 
       products.forEach(p => {
-        const pName = p.name.toLowerCase()
-        const pSku  = (p.sku || '').toLowerCase()
-        if (pSku && nameLower.includes(pSku)) { bestMatch = p; bestScore = 100; return }
-        let score = 0
-        words.forEach(w => { if (pName.includes(w)) score += w.length })
-        if (words[0] && pName.startsWith(words[0])) score += 10
-        if (score > bestScore) { bestScore = score; bestMatch = p }
+        const pName = p.name.toLowerCase().trim()
+        const pSku  = (p.sku || '').toLowerCase().trim()
+
+        // 1. Exact SKU match
+        if (pSku && (nameLower === pSku || nameLower.includes(pSku))) {
+          bestMatch = p; bestScore = 1000; return
+        }
+
+        // 2. Exact name match (case insensitive)
+        if (pName === nameLower) {
+          bestMatch = p; bestScore = 999; return
+        }
+
+        // 3. Name contains the full search string or vice versa
+        if (pName.includes(nameLower) || nameLower.includes(pName)) {
+          const score = 500 + pName.length
+          if (score > bestScore) { bestScore = score; bestMatch = p }
+          return
+        }
+
+        // 4. ALL significant words must match — no partial word matches allowed
+        if (words.length === 0) return
+        const allWordsMatch = words.every(w => pName.includes(w))
+        if (allWordsMatch) {
+          // Extra: how much of the product name is covered
+          const coverage = words.reduce((a, w) => a + w.length, 0) / pName.length
+          const score = Math.round(coverage * 100) + words.length * 10
+          if (score > bestScore) { bestScore = score; bestMatch = p }
+        }
       })
 
-      if (bestMatch && bestScore >= 4) {
+      // High threshold — must cover most of the name to be considered a match
+      if (bestMatch && bestScore >= 50) {
         matched.push({ product: bestMatch, qty, format, originalLine: raw })
       } else {
         unmatched.push({ originalLine: raw, qty, name, format })
