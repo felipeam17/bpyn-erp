@@ -345,7 +345,7 @@ function ProductModal({ product, categories, suppliers, onClose, onSave, userEma
               <div className="form-group">
                 <label className="form-label">Unidad</label>
                 <select className="form-select" value={form.unit} onChange={e => set('unit', e.target.value)}>
-                  {['unidad','kg','litro','botella','caja','paquete','bidón','set','spray','frasco','pack','rollo','metro','juego'].map(u => (
+                  {['unidad','kg','libra','litro','botella','caja','paquete','bidón','set','spray','frasco','pack','rollo','metro','juego'].map(u => (
                     <option key={u}>{u}</option>
                   ))}
                 </select>
