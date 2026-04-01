@@ -60,12 +60,12 @@ export default function NewQuote() {
     searchRef.current?.focus()
   }
 
-  const updateItem = (productId, field, value) => {
-    setItems(prev => prev.map(i => i.product_id === productId ? { ...i, [field]: value } : i))
+  const updateItem = (key, field, value) => {
+    setItems(prev => prev.map(i => (i.product_id === key || i.product_name === key) ? { ...i, [field]: value } : i))
   }
 
-  const removeItem = (productId) => {
-    setItems(prev => prev.filter(i => i.product_id !== productId))
+  const removeItem = (key) => {
+    setItems(prev => prev.filter(i => i.product_id !== key && i.product_name !== key))
   }
 
   // ── Paste list parser ────────────────────────────────────────────
@@ -133,9 +133,26 @@ export default function NewQuote() {
     setPasteResult({ matched, unmatched })
   }
 
+  const addUnmatched = (item) => {
+    setItems(prev => {
+      const existing = prev.find(i => i.product_name === item.name && !i.product_id)
+      if (existing) return prev
+      return [...prev, {
+        product_id:   null,
+        product_name: item.name,
+        product_sku:  '',
+        unit:         'unidad',
+        unit_cost:    0,
+        unit_price:   '',   // blank — user fills manually
+        qty:          item.qty,
+      }]
+    })
+  }
+
   const applyPasteMatches = () => {
     if (!pasteResult) return
     pasteResult.matched.forEach(({ product, qty }) => addProduct(product, qty))
+    pasteResult.unmatched.forEach(item => addUnmatched(item))
     setPasteText('')
     setPasteResult(null)
     setMode('manual')
@@ -301,17 +318,22 @@ export default function NewQuote() {
                 {pasteResult.unmatched.length > 0 && (
                   <>
                     <div style={{ fontSize: 11, color: 'var(--warning)', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 10, fontWeight: 500 }}>
-                      ⚠ {pasteResult.unmatched.length} no encontrados en catálogo
+                      ⚠ {pasteResult.unmatched.length} no encontrados — se agregarán sin precio
                     </div>
                     <div style={{ marginBottom: 16 }}>
                       {pasteResult.unmatched.map((u, i) => (
                         <div key={i} style={{
-                          padding: '8px 14px', background: 'rgba(224,160,82,0.06)',
+                          display: 'flex', alignItems: 'center', gap: 12,
+                          padding: '9px 14px', background: 'rgba(224,160,82,0.06)',
                           border: '1px solid rgba(224,160,82,0.2)',
                           borderRadius: 8, marginBottom: 6,
-                          fontSize: 13, color: 'var(--warning)'
                         }}>
-                          ⚠ "{u.originalLine}" — no está en el catálogo, agrégalo manualmente
+                          <span style={{ fontSize: 13, color: 'var(--warning)' }}>⚠</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 13, color: 'var(--white-2)' }}>{u.name}</div>
+                            <div style={{ fontSize: 11, color: 'var(--warning)' }}>No está en catálogo — precio en blanco para llenar manual</div>
+                          </div>
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--white-3)' }}>{u.qty} uds</span>
                         </div>
                       ))}
                     </div>
@@ -418,7 +440,7 @@ export default function NewQuote() {
                     <input
                       className="form-input" type="number" min="0.01" step="0.01"
                       value={item.qty}
-                      onChange={e => updateItem(item.product_id, 'qty', e.target.value)}
+                      onChange={e => updateItem(item.product_id ?? item.product_name, 'qty', e.target.value)}
                       style={{ padding: '5px 8px', fontSize: 13, textAlign: 'right' }}
                     />
                   </div>
@@ -426,21 +448,24 @@ export default function NewQuote() {
                     <input
                       className="form-input" type="number" min="0" step="0.01"
                       value={item.unit_price}
-                      onChange={e => updateItem(item.product_id, 'unit_price', e.target.value)}
-                      style={{ padding: '5px 8px', fontSize: 13, textAlign: 'right' }}
+                      onChange={e => updateItem(item.product_id ?? item.product_name, 'unit_price', e.target.value)}
+                      placeholder="$ precio"
+                      style={{ padding: '5px 8px', fontSize: 13, textAlign: 'right', borderColor: item.unit_price === '' ? 'var(--warning)' : undefined }}
                     />
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    {m !== null
-                      ? <span className={marginClass(m)} style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{pct(m)}</span>
-                      : <span style={{ fontSize: 11, color: 'var(--white-3)' }}>—</span>
+                    {item.unit_price === ''
+                      ? <span style={{ fontSize: 10, color: 'var(--warning)', fontWeight: 500 }}>⚠ sin precio</span>
+                      : m !== null
+                        ? <span className={marginClass(m)} style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{pct(m)}</span>
+                        : <span style={{ fontSize: 11, color: 'var(--white-3)' }}>—</span>
                     }
                   </div>
                   <div style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--gold)', fontSize: 13 }}>
                     {fmt(sub)}
                   </div>
                   <div>
-                    <button onClick={() => removeItem(item.product_id)}
+                    <button onClick={() => removeItem(item.product_id ?? item.product_name)}
                       style={{ background: 'none', border: 'none', color: 'var(--white-3)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>×</button>
                   </div>
                 </div>
