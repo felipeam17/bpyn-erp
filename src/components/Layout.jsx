@@ -9,6 +9,7 @@ const NAV = [
   { section: 'Productos' },
   { to: '/catalog',   icon: '▤', label: 'Catálogo' },
   { to: '/import',    icon: '↑', label: 'Importar' },
+  { to: '/suppliers',  icon: '⊞', label: 'Proveedores' },
   { section: 'Ventas' },
   { to: '/quotes',    icon: '◉', label: 'Cotizaciones' },
   { section: 'Análisis' },

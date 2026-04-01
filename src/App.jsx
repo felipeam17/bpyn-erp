@@ -9,6 +9,7 @@ import Catalog from './pages/Catalog'
 import Quotes from './pages/Quotes'
 import NewQuote from './pages/NewQuote'
 import Margins from './pages/Margins'
+import Suppliers from './pages/Suppliers'
 import Import from './pages/Import'
 
 export const AuthContext = createContext(null)
