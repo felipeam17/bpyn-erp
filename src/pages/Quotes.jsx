@@ -21,6 +21,44 @@ export default function Quotes() {
     if (detail?.id === id) setDetail(prev => ({ ...prev, status }))
   }
 
+
+  const exportQuote = async (q) => {
+    if (!q.quote_items?.length) { alert('Esta cotización no tiene items para exportar'); return }
+    try {
+      const res = await fetch('/api/export-quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quote: {
+            quote_number: q.quote_number,
+            client: q.client,
+            date: q.date,
+            marina: q.notes || '',
+            discount_pct: q.discount_pct || 0,
+            notes: q.notes || '',
+          },
+          items: q.quote_items.map(i => ({
+            product_name: i.product_name,
+            format: i.unit || '',
+            qty: i.qty,
+            unit_price: i.unit_price,
+            supplier: '',
+          }))
+        })
+      })
+      if (!res.ok) { alert('Error generando el Excel'); return }
+      const blob = await res.blob()
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href = url
+      a.download = `BYN_${q.quote_number}_${q.client}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      alert('Error: ' + err.message)
+    }
+  }
+
   return (
     <>
       <div className="topbar">
@@ -70,6 +108,7 @@ export default function Quotes() {
                         <td>
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                             <button className="btn btn-ghost btn-sm" onClick={() => setDetail(q)}>Ver</button>
+                              <button className="btn btn-ghost btn-sm" onClick={() => exportQuote(q)} title="Exportar Excel">⬇ Excel</button>
                             {q.status === 'pendiente' && (
                               <>
                                 <button className="btn btn-success btn-xs" onClick={() => handleStatus(q.id, 'aceptada')}>✓</button>
@@ -88,12 +127,12 @@ export default function Quotes() {
         </div>
       </div>
 
-      {detail && <QuoteDetail quote={detail} onClose={() => setDetail(null)} onStatusChange={handleStatus} />}
+      {detail && <QuoteDetail quote={detail} onClose={() => setDetail(null)} onStatusChange={handleStatus} onExport={exportQuote} />}
     </>
   )
 }
 
-function QuoteDetail({ quote: q, onClose, onStatusChange }) {
+function QuoteDetail({ quote: q, onClose, onStatusChange, onExport }) {
   const items = q.quote_items || []
   const s = statusMap[q.status] || statusMap.pendiente
   const hasCost = q.total_cost > 0
@@ -159,15 +198,16 @@ function QuoteDetail({ quote: q, onClose, onStatusChange }) {
           </div>
         </div>
 
-        {q.status === 'pendiente' && (
-          <>
-            <div className="divider" />
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+        <div className="divider" />
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'center' }}>
+          <button className="btn btn-ghost" onClick={() => onExport(q)}>⬇ Exportar Excel</button>
+          {q.status === 'pendiente' && (
+            <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn btn-danger" onClick={() => { onStatusChange(q.id, 'rechazada'); onClose() }}>Rechazar</button>
               <button className="btn btn-success" onClick={() => { onStatusChange(q.id, 'aceptada'); onClose() }}>✓ Marcar como Aceptada</button>
             </div>
-          </>
-        )}
+          )}
+        </div>
       </div>
     </div>
   )
