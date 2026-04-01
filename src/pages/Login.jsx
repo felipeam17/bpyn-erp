@@ -27,7 +27,7 @@ export default function Login() {
     <div className="login-page">
       <div className="login-card">
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <div style={{ fontSize: 32, fontWeight: 700, color: 'var(--gold)', letterSpacing: 5, marginBottom: 6 }}>BYN</div>
+          <div style={{ fontSize: 32, fontWeight: 700, color: 'var(--navy)', letterSpacing: 5, marginBottom: 6 }}>BYN</div>
           <div style={{ fontSize: 11, color: 'var(--white-3)', letterSpacing: 2, textTransform: 'uppercase' }}>Marine Supply ERP</div>
         </div>
 
