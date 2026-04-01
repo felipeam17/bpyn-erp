@@ -166,8 +166,66 @@ export default function NewQuote() {
 
   const applyPasteMatches = () => {
     if (!pasteResult) return
-    pasteResult.matched.forEach(({ product, qty, format }) => addProduct(product, qty, format))
-    pasteResult.unmatched.forEach(item => addUnmatched(item))
+
+    // Rebuild the original ordered list by merging matched and unmatched
+    // pasteResult.matched and unmatched both have originalLine — we use
+    // the order they appeared in pasteResult (which mirrors paste order)
+    const allInOrder = []
+
+    // We need to reconstruct original order from both lists
+    // Both were pushed in line order, so interleave them by original index
+    const matchedMap = {}
+    const unmatchedMap = {}
+
+    pasteResult.matched.forEach((m, i) => { matchedMap[m.originalLine] = m })
+    pasteResult.unmatched.forEach((u, i) => { unmatchedMap[u.originalLine] = u })
+
+    // Re-parse lines in order to get correct sequence
+    const lines = pasteText.trim().split('\n').filter(l => l.trim())
+    const hasTabs = lines[0]?.includes('\t')
+
+    lines.forEach(line => {
+      const raw = line.trim()
+      if (!raw) return
+      const matched = matchedMap[raw]
+      const unmatched = unmatchedMap[raw]
+
+      if (matched) {
+        allInOrder.push({
+          product_id:   matched.product.id,
+          product_name: matched.product.name,
+          product_sku:  matched.product.sku || '',
+          unit:         matched.product.unit,
+          format:       matched.format || matched.product.unit || '',
+          unit_cost:    matched.product.avg_cost || 0,
+          unit_price:   matched.product.sale_price,
+          qty:          matched.qty,
+        })
+      } else if (unmatched) {
+        allInOrder.push({
+          product_id:   null,
+          product_name: unmatched.name,
+          product_sku:  '',
+          unit:         unmatched.format || 'unidad',
+          format:       unmatched.format || '',
+          unit_cost:    0,
+          unit_price:   '',
+          qty:          unmatched.qty,
+        })
+      }
+    })
+
+    // Add to existing items preserving order — append in order, skip duplicates
+    setItems(prev => {
+      const existingIds = new Set(prev.map(i => i.product_id).filter(Boolean))
+      const existingNames = new Set(prev.filter(i => !i.product_id).map(i => i.product_name))
+      const toAdd = allInOrder.filter(i => {
+        if (i.product_id) return !existingIds.has(i.product_id)
+        return !existingNames.has(i.product_name)
+      })
+      return [...prev, ...toAdd]
+    })
+
     setPasteText('')
     setPasteResult(null)
     setMode('manual')
