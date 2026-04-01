@@ -39,7 +39,7 @@ export default function NewQuote() {
     : []
 
   // ── Add / remove / update items ──────────────────────────────────
-  const addProduct = (p, qty = 1) => {
+  const addProduct = (p, qty = 1, format = '') => {
     setItems(prev => {
       const existing = prev.find(i => i.product_id === p.id)
       if (existing) {
@@ -50,6 +50,7 @@ export default function NewQuote() {
         product_name: p.name,
         product_sku:  p.sku || '',
         unit:         p.unit,
+        format:       format || p.unit || '',
         unit_cost:    p.avg_cost || 0,
         unit_price:   p.sale_price,
         qty,
@@ -75,30 +76,51 @@ export default function NewQuote() {
     const matched = []
     const unmatched = []
 
+    // Detect if pasted data has tab-separated columns (from Excel/Sheets)
+    // Possible column orders: DESCRIPTION, FORMAT, QUANTITY or DESCRIPTION, QUANTITY
+    const firstLine = lines[0]
+    const hasTabs = firstLine.includes('\t')
+
     lines.forEach(line => {
       const raw = line.trim()
       if (!raw) return
 
-      // Try to extract quantity from start or end of line
-      // Patterns: "2 Aceite de Oliva", "Aceite de Oliva x2", "Aceite de Oliva - 2", "Aceite de Oliva  2"
       let qty = 1
       let name = raw
+      let format = ''
 
-      // Pattern: starts with number then space/tab
-      const startNum = raw.match(/^(\d+(?:\.\d+)?)\s+(.+)/)
-      if (startNum) {
-        qty = parseFloat(startNum[1])
-        name = startNum[2].trim()
+      if (hasTabs) {
+        // Tab-separated: detect columns
+        const cols = raw.split('\t').map(c => c.trim())
+        // Try to identify which column is which
+        // Heuristic: description is the longest text, quantity is a number
+        name = cols[0] || raw
+
+        // Check each column for qty (pure number) and format (non-numeric text)
+        cols.slice(1).forEach(col => {
+          const num = parseFloat(col.replace(',', '.'))
+          if (!isNaN(num) && col.match(/^[\d.,]+$/)) {
+            qty = num
+          } else if (col && !col.match(/^[\d.,]+$/)) {
+            format = col
+          }
+        })
       } else {
-        // Pattern: ends with x2, -2, *2, or just a number
-        const endNum = raw.match(/^(.+?)[\s\-x*×]+(\d+(?:\.\d+)?)$/)
-        if (endNum) {
-          name = endNum[1].trim()
-          qty = parseFloat(endNum[2])
+        // Single column — try to extract quantity from name
+        const startNum = raw.match(/^(\d+(?:\.\d+)?)\s+(.+)/)
+        if (startNum) {
+          qty = parseFloat(startNum[1])
+          name = startNum[2].trim()
+        } else {
+          const endNum = raw.match(/^(.+?)[\s\-x*×]+(\d+(?:\.\d+)?)$/)
+          if (endNum) {
+            name = endNum[1].trim()
+            qty = parseFloat(endNum[2])
+          }
         }
       }
 
-      // Now fuzzy-match name against products
+      // Fuzzy-match name against products
       const nameLower = name.toLowerCase()
       const words = nameLower.split(/\s+/).filter(w => w.length > 2)
 
@@ -108,25 +130,17 @@ export default function NewQuote() {
       products.forEach(p => {
         const pName = p.name.toLowerCase()
         const pSku  = (p.sku || '').toLowerCase()
-
-        // Exact SKU match
         if (pSku && nameLower.includes(pSku)) { bestMatch = p; bestScore = 100; return }
-
-        // Score by word overlap
         let score = 0
         words.forEach(w => { if (pName.includes(w)) score += w.length })
-
-        // Bonus for starting with same word
-        if (pName.startsWith(words[0])) score += 10
-
+        if (words[0] && pName.startsWith(words[0])) score += 10
         if (score > bestScore) { bestScore = score; bestMatch = p }
       })
 
-      // Require minimum score to consider it a match (at least 4 chars matched)
       if (bestMatch && bestScore >= 4) {
-        matched.push({ product: bestMatch, qty, originalLine: raw })
+        matched.push({ product: bestMatch, qty, format, originalLine: raw })
       } else {
-        unmatched.push({ originalLine: raw, qty, name })
+        unmatched.push({ originalLine: raw, qty, name, format })
       }
     })
 
@@ -141,9 +155,10 @@ export default function NewQuote() {
         product_id:   null,
         product_name: item.name,
         product_sku:  '',
-        unit:         'unidad',
+        unit:         item.format || 'unidad',
+        format:       item.format || '',
         unit_cost:    0,
-        unit_price:   '',   // blank — user fills manually
+        unit_price:   '',
         qty:          item.qty,
       }]
     })
@@ -151,7 +166,7 @@ export default function NewQuote() {
 
   const applyPasteMatches = () => {
     if (!pasteResult) return
-    pasteResult.matched.forEach(({ product, qty }) => addProduct(product, qty))
+    pasteResult.matched.forEach(({ product, qty, format }) => addProduct(product, qty, format))
     pasteResult.unmatched.forEach(item => addUnmatched(item))
     setPasteText('')
     setPasteResult(null)
@@ -189,7 +204,7 @@ export default function NewQuote() {
         product_id:   i.product_id,
         product_name: i.product_name,
         product_sku:  i.product_sku,
-        unit:         i.unit,
+        unit:         i.format || i.unit || '',
         unit_cost:    parseFloat(i.unit_cost || 0),
         unit_price:   i.unit_price === '' || i.unit_price === null || i.unit_price === undefined ? 0 : parseFloat(i.unit_price),
         qty:          parseFloat(i.qty),
@@ -434,7 +449,15 @@ export default function NewQuote() {
                 <div key={item.product_id} className="quote-item-row" style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 90px 90px 36px', gap: 8, alignItems: 'center' }}>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 500 }}>{item.product_name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--white-3)' }}>{item.product_sku || '—'} · {item.unit}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                      <input
+                        className="form-input"
+                        value={item.format || ''}
+                        onChange={e => updateItem(item.product_id ?? item.product_name, 'format', e.target.value)}
+                        placeholder="formato / presentación"
+                        style={{ padding: '2px 7px', fontSize: 11, color: 'var(--text-3)', width: 160, height: 22, borderRadius: 4 }}
+                      />
+                    </div>
                   </div>
                   <div>
                     <input
