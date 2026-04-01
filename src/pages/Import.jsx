@@ -1,6 +1,6 @@
 // src/pages/Import.jsx
 import { useState, useEffect } from 'react'
-import { getCategories, getSuppliers, createProduct, createCategory } from '../lib/supabase'
+import { getCategories, getSuppliers, getProducts, createProduct, createCategory, updateProduct } from '../lib/supabase'
 
 const EXPECTED_COLS = ['nombre', 'precio_venta', 'categoria', 'sku', 'proveedor', 'costo', 'stock', 'unidad']
 
@@ -89,7 +89,14 @@ export default function Import() {
   // ── Step 3 → 4: Import ───────────────────────────────────────────
   const runImport = async () => {
     setImporting(true)
-    let created = 0, skipped = 0
+    let created = 0, updated = 0, skipped = 0
+
+    // Load all existing products for duplicate check
+    const { data: existingProducts } = await getProducts(true)
+    const existingMap = {}
+    for (const p of (existingProducts || [])) {
+      existingMap[p.name.trim().toLowerCase()] = p
+    }
 
     // Ensure all categories exist
     const catMap = {}
@@ -109,7 +116,7 @@ export default function Import() {
         ? suppliers.find(s => s.name.toLowerCase().includes(row.supplier.toLowerCase()))?.id || null
         : null
 
-      const { error } = await createProduct({
+      const payload = {
         name:        row.name,
         sale_price:  row.sale_price,
         avg_cost:    row.avg_cost || 0,
@@ -118,12 +125,30 @@ export default function Import() {
         sku:         row.sku || null,
         stock:       row.stock || 0,
         unit:        row.unit || 'unidad',
-      })
+        active:      true,
+      }
 
-      if (error) skipped++ ; else created++
+      // Check if product already exists by name (case insensitive)
+      const existing = existingMap[row.name.trim().toLowerCase()]
+      if (existing) {
+        // Update existing product instead of creating duplicate
+        const { error } = await updateProduct(existing.id, {
+          sale_price:  payload.sale_price,
+          avg_cost:    payload.avg_cost || existing.avg_cost,
+          category_id: categoryId || existing.category_id,
+          supplier_id: supplierId || existing.supplier_id,
+          sku:         payload.sku || existing.sku,
+          unit:        payload.unit || existing.unit,
+          active:      true,
+        })
+        if (error) skipped++ ; else updated++
+      } else {
+        const { error } = await createProduct(payload)
+        if (error) skipped++ ; else created++
+      }
     }
 
-    setResults({ created, skipped })
+    setResults({ created, updated, skipped })
     setImporting(false)
     setStep(4)
   }
@@ -286,9 +311,10 @@ export default function Import() {
             <div style={{ fontSize: 22, fontWeight: 600, color: 'var(--success)', marginBottom: 8 }}>
               Importación completada
             </div>
-            <div style={{ fontSize: 14, color: 'var(--white-2)', marginBottom: 24 }}>
-              {results.created} producto{results.created !== 1 ? 's' : ''} importado{results.created !== 1 ? 's' : ''} correctamente
-              {results.skipped > 0 && ` · ${results.skipped} con errores`}
+            <div style={{ fontSize: 14, color: 'var(--text-2)', marginBottom: 24 }}>
+              {results.created > 0 && <div>✓ {results.created} producto{results.created !== 1 ? 's' : ''} nuevo{results.created !== 1 ? 's' : ''} creado{results.created !== 1 ? 's' : ''}</div>}
+              {results.updated > 0 && <div>↻ {results.updated} producto{results.updated !== 1 ? 's' : ''} actualizado{results.updated !== 1 ? 's' : ''} (ya existían)</div>}
+              {results.skipped > 0 && <div style={{color:'var(--danger)'}}>✗ {results.skipped} con errores</div>}
             </div>
             <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
               <button className="btn btn-ghost" onClick={reset}>Importar más</button>
