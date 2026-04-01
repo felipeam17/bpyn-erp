@@ -156,23 +156,36 @@ export default async function handler(req, res) {
     subtotalVal.alignment = { horizontal: 'right' }
 
     const discount = parseFloat(quote.discount_pct || 0)
-    let grandRow = subRow + 1
+    const transFee = parseFloat(quote.transportation_fee || 0)
+    let nextRow = subRow + 1
 
     if (discount > 0) {
-      const discRow = subRow + 1
-      grandRow = discRow + 1
-
-      const dLabel = ws.getRow(discRow).getCell(4)
+      const dLabel = ws.getRow(nextRow).getCell(4)
       dLabel.value = `DISCOUNT (${discount.toFixed(1)}%)`
       dLabel.font  = { name: 'Arial', size: 9, color: { argb: 'FF888888' } }
       dLabel.alignment = { horizontal: 'right' }
-
-      const dVal = ws.getRow(discRow).getCell(5)
+      const dVal = ws.getRow(nextRow).getCell(5)
       dVal.value  = { formula: `-E${subRow}*${discount/100}` }
       dVal.font   = { name: 'Arial', size: 9, color: { argb: 'FF888888' } }
       dVal.numFmt = '"$"#,##0.00'
       dVal.alignment = { horizontal: 'right' }
+      nextRow++
     }
+
+    if (transFee > 0) {
+      const tfLabel = ws.getRow(nextRow).getCell(4)
+      tfLabel.value = 'Transportation Fee'
+      tfLabel.font  = { name: 'Arial', size: 9, color: { argb: 'FF444444' } }
+      tfLabel.alignment = { horizontal: 'right' }
+      const tfVal = ws.getRow(nextRow).getCell(5)
+      tfVal.value  = transFee
+      tfVal.font   = { name: 'Arial', size: 9, color: { argb: 'FF444444' } }
+      tfVal.numFmt = '"$"#,##0.00'
+      tfVal.alignment = { horizontal: 'right' }
+      nextRow++
+    }
+
+    let grandRow = nextRow
 
     ws.getRow(grandRow).height = 26
     for (let col = 1; col <= 7; col++) {
@@ -186,9 +199,12 @@ export default async function handler(req, res) {
     totalLabel.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY } }
 
     const totalVal = ws.getRow(grandRow).getCell(5)
-    totalVal.value  = discount > 0
-      ? { formula: `E${subRow}+E${subRow+1}` }
-      : { formula: `E${subRow}` }
+    // Sum subtotal + all adjustment rows (discount, transport fee, etc.)
+    if (grandRow > subRow + 1) {
+      totalVal.value = { formula: `SUM(E${subRow}:E${grandRow-1})` }
+    } else {
+      totalVal.value = { formula: `E${subRow}` }
+    }
     totalVal.numFmt = '"$"#,##0.00'
     totalVal.font   = goldFont(13, true)
     totalVal.alignment = { horizontal: 'right', vertical: 'middle' }

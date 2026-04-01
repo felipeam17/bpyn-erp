@@ -20,7 +20,8 @@ export default function NewQuote() {
   const [notes,       setNotes]       = useState('')
   const [saving,      setSaving]      = useState(false)
   const [error,       setError]       = useState('')
-  const [mode,        setMode]        = useState('manual') // 'manual' | 'paste'
+  const [mode,        setMode]        = useState('manual')
+  const [transFee,    setTransFee]    = useState(0) // 'manual' | 'paste'
   const [pasteText,   setPasteText]   = useState('')
   const [pasteResult, setPasteResult] = useState(null) // { matched, unmatched }
 
@@ -258,7 +259,8 @@ export default function NewQuote() {
   const subtotal   = items.reduce((a, i) => a + parseFloat(i.unit_price || 0) * parseFloat(i.qty || 0), 0)
   const totalCost  = items.reduce((a, i) => a + parseFloat(i.unit_cost  || 0) * parseFloat(i.qty || 0), 0)
   const discAmt    = subtotal * (parseFloat(discountPct) / 100)
-  const total      = subtotal - discAmt
+  const transFeeAmt = parseFloat(transFee || 0)
+  const total      = subtotal - discAmt + transFeeAmt
   const totalMgn   = total > 0 ? calcMargin(totalCost, total) : 0
 
   // ── Save ─────────────────────────────────────────────────────────
@@ -275,6 +277,7 @@ export default function NewQuote() {
         valid_until:  validUntil || null,
         status:       'pendiente',
         discount_pct: parseFloat(discountPct),
+        transportation_fee: transFeeAmt,
         notes,
         subtotal,
         total,
@@ -582,7 +585,7 @@ export default function NewQuote() {
         {items.length > 0 && (
           <div className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 20 }}>
-              <div>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">Descuento Global (%)</label>
                   <input
@@ -591,23 +594,37 @@ export default function NewQuote() {
                     style={{ width: 120 }}
                   />
                 </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Transportation Fee ($)</label>
+                  <input
+                    className="form-input" type="number" min="0" step="0.01"
+                    value={transFee} onChange={e => setTransFee(e.target.value)}
+                    placeholder="0.00"
+                    style={{ width: 130 }}
+                  />
+                </div>
                 {totalCost > 0 && (
-                  <div style={{ marginTop: 12, fontSize: 13, color: 'var(--white-3)', lineHeight: 2 }}>
+                  <div style={{ marginTop: 12, fontSize: 13, color: 'var(--text-3)', lineHeight: 2 }}>
                     Margen total: <span className={marginClass(totalMgn)} style={{ fontWeight: 600 }}>{pct(totalMgn)}</span><br />
-                    Ganancia estimada: <span style={{ color: 'var(--gold)' }}>{fmt(total - totalCost)}</span>
+                    Ganancia estimada: <span style={{ color: 'var(--navy)', fontWeight: 600 }}>{fmt(total - totalCost)}</span>
                   </div>
                 )}
               </div>
 
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 12, color: 'var(--white-3)', marginBottom: 4 }}>Subtotal: {fmt(subtotal)}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 4 }}>Subtotal: {fmt(subtotal)}</div>
                 {parseFloat(discountPct) > 0 && (
                   <div style={{ fontSize: 12, color: 'var(--danger)', marginBottom: 4 }}>
                     Descuento ({discountPct}%): -{fmt(discAmt)}
                   </div>
                 )}
-                <div style={{ fontSize: 11, color: 'var(--white-3)', textTransform: 'uppercase', letterSpacing: 1 }}>Total</div>
-                <div style={{ fontSize: 36, fontWeight: 700, color: 'var(--gold)', fontFamily: 'var(--mono)' }}>{fmt(total)}</div>
+                {transFeeAmt > 0 && (
+                  <div style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4 }}>
+                    Transportation Fee: {fmt(transFeeAmt)}
+                  </div>
+                )}
+                <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 1 }}>Total</div>
+                <div style={{ fontSize: 36, fontWeight: 700, color: 'var(--navy)', fontFamily: 'var(--mono)' }}>{fmt(total)}</div>
               </div>
             </div>
           </div>

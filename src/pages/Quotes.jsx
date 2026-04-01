@@ -35,6 +35,7 @@ export default function Quotes() {
             date: q.date,
             marina: q.notes || '',
             discount_pct: q.discount_pct || 0,
+            transportation_fee: q.transportation_fee || 0,
             notes: q.notes || '',
           },
           items: q.quote_items.map(i => ({
