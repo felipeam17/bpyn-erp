@@ -15,6 +15,8 @@ export default function Catalog() {
   const [modal,      setModal]      = useState(null) // null | 'new' | product_obj
   const [selected,   setSelected]   = useState(new Set()) // selected product ids
   const [deleting,   setDeleting]   = useState(false)
+  const [bulkCat,    setBulkCat]    = useState(false)  // show bulk category modal
+  const [bulkCatId,  setBulkCatId]  = useState('')
 
   const toggleSelect = (id) => setSelected(prev => {
     const next = new Set(prev)
@@ -42,6 +44,17 @@ export default function Catalog() {
     await load()
   }
 
+  const applyBulkCategory = async () => {
+    if (!bulkCatId) return
+    for (const id of selected) {
+      await updateProduct(id, { category_id: bulkCatId })
+    }
+    setSelected(new Set())
+    setBulkCat(false)
+    setBulkCatId('')
+    await load()
+  }
+
   const load = useCallback(async () => {
     const [p, c, s] = await Promise.all([getProducts(), getCategories(), getSuppliers()])
     setProducts(p.data || [])
@@ -65,9 +78,14 @@ export default function Catalog() {
         <div className="topbar-title">Catálogo de Productos</div>
         <div className="topbar-actions">
           {selected.size > 0 && (
-            <button className="btn btn-danger" onClick={deleteSelected} disabled={deleting}>
-              {deleting ? 'Eliminando...' : `✕ Eliminar ${selected.size} seleccionado${selected.size > 1 ? 's' : ''}`}
-            </button>
+            <>
+              <button className="btn btn-ghost" onClick={() => setBulkCat(true)}>
+                🏷 Categoría para {selected.size} seleccionado{selected.size > 1 ? 's' : ''}
+              </button>
+              <button className="btn btn-danger" onClick={deleteSelected} disabled={deleting}>
+                {deleting ? 'Eliminando...' : `✕ Eliminar ${selected.size}`}
+              </button>
+            </>
           )}
           <button className="btn btn-primary" onClick={() => setModal('new')}>+ Nuevo Producto</button>
         </div>
@@ -169,6 +187,33 @@ export default function Catalog() {
         </div>
       </div>
 
+      {bulkCat && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setBulkCat(false)}>
+          <div className="modal" style={{ maxWidth: 400 }}>
+            <div className="modal-header">
+              <div className="modal-title">Asignar Categoría</div>
+              <button className="modal-close" onClick={() => setBulkCat(false)}>×</button>
+            </div>
+            <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 16 }}>
+              Se asignará la categoría seleccionada a <strong>{selected.size} producto{selected.size > 1 ? 's' : ''}</strong>.
+            </p>
+            <div className="form-group">
+              <label className="form-label">Categoría</label>
+              <select className="form-select" value={bulkCatId} onChange={e => setBulkCatId(e.target.value)} autoFocus>
+                <option value="">— Selecciona una categoría —</option>
+                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
+              <button className="btn btn-ghost" onClick={() => setBulkCat(false)}>Cancelar</button>
+              <button className="btn btn-primary" onClick={applyBulkCategory} disabled={!bulkCatId}>
+                Aplicar a {selected.size} producto{selected.size > 1 ? 's' : ''}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {modal === 'new' && (
         <ProductModal
           categories={categories} suppliers={suppliers}
@@ -221,6 +266,19 @@ function ProductModal({ product, categories, suppliers, onClose, onSave, userEma
   const handleSave = async () => {
     if (!form.name.trim()) { setError('El nombre es requerido'); return }
     if (!form.sale_price)  { setError('El precio de venta es requerido'); return }
+
+    // Check for duplicate name (case insensitive), skip check when editing same product
+    const allProds = await getProducts(true)
+    const duplicate = (allProds.data || []).find(p =>
+      p.name.trim().toLowerCase() === form.name.trim().toLowerCase() &&
+      p.id !== product?.id &&
+      p.active
+    )
+    if (duplicate) {
+      setError(`Ya existe un producto con el nombre "${duplicate.name}". Verifica el catálogo.`)
+      return
+    }
+
     setSaving(true)
     setError('')
 
