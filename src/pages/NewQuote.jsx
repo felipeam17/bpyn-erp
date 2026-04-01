@@ -191,7 +191,7 @@ export default function NewQuote() {
         product_sku:  i.product_sku,
         unit:         i.unit,
         unit_cost:    parseFloat(i.unit_cost || 0),
-        unit_price:   parseFloat(i.unit_price),
+        unit_price:   i.unit_price === '' || i.unit_price === null || i.unit_price === undefined ? 0 : parseFloat(i.unit_price),
         qty:          parseFloat(i.qty),
       }))
     )
