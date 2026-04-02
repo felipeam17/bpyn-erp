@@ -1,7 +1,7 @@
 // src/pages/NewQuote.jsx
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getProducts, createQuote } from '../lib/supabase'
+import { getProducts, createQuote, createProduct } from '../lib/supabase'
 import { fmt, pct, calcMargin, marginClass, today } from '../lib/utils'
 import { useAuth } from '../App'
 
@@ -287,6 +287,24 @@ export default function NewQuote() {
     if (items.length === 0) { setError('Agrega al menos un producto'); return }
     setSaving(true)
     setError('')
+
+    // Auto-save manual/unmatched items to catalog if they don't exist
+    const unmatchedItems = items.filter(i => !i.product_id && i.product_name.trim())
+    for (const item of unmatchedItems) {
+      const { data: existing } = await getProducts(true)
+      const alreadyExists = (existing || []).find(
+        p => p.name.trim().toLowerCase() === item.product_name.trim().toLowerCase()
+      )
+      if (!alreadyExists) {
+        await createProduct({
+          name:       item.product_name.trim(),
+          sale_price: item.unit_price ? parseFloat(item.unit_price) : 0,
+          avg_cost:   0,
+          unit:       item.format || item.unit || 'unidad',
+          active:     true,
+        })
+      }
+    }
 
     const { error } = await createQuote(
       {
