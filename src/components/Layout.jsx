@@ -29,7 +29,7 @@ export default function Layout() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-logo" style={{ padding: '16px 20px' }}>
-          <img src="/logo.png" alt="Blue Yacht Nautica" style={{ width: 140, height: 'auto', filter: 'brightness(0) invert(1)' }} />
+          <img src="/logo.png" alt="Blue Yacht Nautica" style={{ width: 140, height: 'auto' }} />
         </div>
 
         <nav style={{ flex: 1, padding: '8px 0' }}>
