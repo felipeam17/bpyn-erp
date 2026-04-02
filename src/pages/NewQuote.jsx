@@ -290,19 +290,26 @@ export default function NewQuote() {
 
     // Auto-save manual/unmatched items to catalog if they don't exist
     const unmatchedItems = items.filter(i => !i.product_id && i.product_name.trim())
-    for (const item of unmatchedItems) {
-      const { data: existing } = await getProducts(true)
-      const alreadyExists = (existing || []).find(
-        p => p.name.trim().toLowerCase() === item.product_name.trim().toLowerCase()
+    if (unmatchedItems.length > 0) {
+      // Load all existing products once
+      const { data: existingAll } = await getProducts(true)
+      const existingNames = new Set(
+        (existingAll || []).map(p => p.name.trim().toLowerCase())
       )
-      if (!alreadyExists) {
-        await createProduct({
-          name:       item.product_name.trim(),
-          sale_price: item.unit_price ? parseFloat(item.unit_price) : 0,
-          avg_cost:   0,
-          unit:       item.format || item.unit || 'unidad',
-          active:     true,
-        })
+      // Create each new product sequentially
+      for (const item of unmatchedItems) {
+        const nameLower = item.product_name.trim().toLowerCase()
+        if (!existingNames.has(nameLower)) {
+          const { data: newProd } = await createProduct({
+            name:       item.product_name.trim(),
+            sale_price: item.unit_price && item.unit_price !== '' ? parseFloat(item.unit_price) : 0,
+            avg_cost:   0,
+            unit:       item.format || item.unit || 'unidad',
+            active:     true,
+          })
+          // Add to set so duplicates within same list don't get created twice
+          if (newProd) existingNames.add(nameLower)
+        }
       }
     }
 
