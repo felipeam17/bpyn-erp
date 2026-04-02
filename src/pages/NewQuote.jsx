@@ -21,7 +21,9 @@ export default function NewQuote() {
   const [saving,      setSaving]      = useState(false)
   const [error,       setError]       = useState('')
   const [mode,        setMode]        = useState('manual')
-  const [transFee,    setTransFee]    = useState(0) // 'manual' | 'paste'
+  const [transFee,    setTransFee]    = useState(0)
+  const [showManual,  setShowManual]  = useState(false)
+  const [manualItem,  setManualItem]  = useState({ name: '', format: '', qty: 1, price: '' }) // 'manual' | 'paste'
   const [pasteText,   setPasteText]   = useState('')
   const [pasteResult, setPasteResult] = useState(null) // { matched, unmatched }
 
@@ -255,6 +257,22 @@ export default function NewQuote() {
     setMode('manual')
   }
 
+  const addManualItem = () => {
+    if (!manualItem.name.trim()) return
+    setItems(prev => [...prev, {
+      product_id:   null,
+      product_name: manualItem.name.trim(),
+      product_sku:  '',
+      unit:         manualItem.format || 'unidad',
+      format:       manualItem.format || '',
+      unit_cost:    0,
+      unit_price:   manualItem.price === '' ? '' : parseFloat(manualItem.price),
+      qty:          parseFloat(manualItem.qty) || 1,
+    }])
+    setManualItem({ name: '', format: '', qty: 1, price: '' })
+    setShowManual(false)
+  }
+
   // ── Totals ───────────────────────────────────────────────────────
   const subtotal   = items.reduce((a, i) => a + parseFloat(i.unit_price || 0) * parseFloat(i.qty || 0), 0)
   const totalCost  = items.reduce((a, i) => a + parseFloat(i.unit_cost  || 0) * parseFloat(i.qty || 0), 0)
@@ -459,7 +477,53 @@ export default function NewQuote() {
         {/* ── MANUAL MODE ── */}
         {mode === 'manual' && (
           <div className="card" style={{ marginBottom: 16 }}>
-            <div className="card-title" style={{ marginBottom: 14 }}>Agregar Productos</div>
+            <div className="card-header">
+              <div className="card-title">Agregar Productos</div>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowManual(v => !v)}>
+                + Agregar manual
+              </button>
+            </div>
+
+            {/* Manual add form */}
+            {showManual && (
+              <div style={{ background: 'var(--gray-1)', borderRadius: 10, padding: 14, marginBottom: 14, border: '1px solid var(--border-l)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 8, alignItems: 'flex-end' }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Nombre del producto</label>
+                    <input className="form-input" value={manualItem.name}
+                      onChange={e => setManualItem(m => ({ ...m, name: e.target.value }))}
+                      placeholder="Ej: Burrata fresca" autoFocus
+                      onKeyDown={e => e.key === 'Enter' && addManualItem()} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Formato</label>
+                    <input className="form-input" value={manualItem.format}
+                      onChange={e => setManualItem(m => ({ ...m, format: e.target.value }))}
+                      placeholder="kg, unidad..." />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Cantidad</label>
+                    <input className="form-input" type="number" min="0.01" step="0.01"
+                      value={manualItem.qty}
+                      onChange={e => setManualItem(m => ({ ...m, qty: e.target.value }))} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Precio ($)</label>
+                    <input className="form-input" type="number" min="0" step="0.01"
+                      value={manualItem.price}
+                      onChange={e => setManualItem(m => ({ ...m, price: e.target.value }))}
+                      placeholder="0.00" />
+                  </div>
+                  <button className="btn btn-primary" onClick={addManualItem}
+                    disabled={!manualItem.name.trim()}
+                    style={{ marginBottom: 0, height: 38 }}>
+                    Agregar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Catalog search */}
             <div style={{ position: 'relative' }}>
               <div className="search-wrap">
                 <span className="search-icon">⌕</span>
@@ -469,7 +533,7 @@ export default function NewQuote() {
                   value={search}
                   onChange={e => { setSearch(e.target.value); setPickerOpen(true) }}
                   onFocus={() => search && setPickerOpen(true)}
-                  placeholder="Busca por nombre o SKU para agregar..."
+                  placeholder="Busca en catálogo por nombre o SKU..."
                 />
               </div>
 
@@ -479,10 +543,10 @@ export default function NewQuote() {
                     <div key={p.id} className="picker-item" onClick={() => addProduct(p)}>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 13, fontWeight: 500 }}>{p.name}</div>
-                        <div style={{ fontSize: 11, color: 'var(--white-3)' }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
                           {p.sku || '—'} · {p.categories?.name || '—'} · {p.unit}
                           {p.avg_cost > 0 && (
-                            <> · <span style={{ color: 'var(--white-2)' }}>
+                            <> · <span style={{ color: 'var(--text-2)' }}>
                               Margen: <span className={marginClass(calcMargin(p.avg_cost, p.sale_price))}>
                                 {pct(calcMargin(p.avg_cost, p.sale_price))}
                               </span>
@@ -491,8 +555,8 @@ export default function NewQuote() {
                         </div>
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                        <div style={{ fontFamily: 'var(--mono)', color: 'var(--gold)', fontSize: 14, fontWeight: 500 }}>{fmt(p.sale_price)}</div>
-                        <div style={{ fontSize: 10, color: 'var(--white-3)' }}>por {p.unit}</div>
+                        <div style={{ fontFamily: 'var(--mono)', color: 'var(--navy)', fontSize: 14, fontWeight: 600 }}>{fmt(p.sale_price)}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-3)' }}>por {p.unit}</div>
                       </div>
                       <button className="btn btn-primary btn-sm">+</button>
                     </div>
