@@ -49,6 +49,7 @@ export default function App() {
             <Route path="quotes" element={<Quotes />} />
             <Route path="quotes/new" element={<NewQuote />} />
             <Route path="margins" element={<Margins />} />
+            <Route path="suppliers" element={<Suppliers />} />
             <Route path="import" element={<Import />} />
           </Route>
         </Routes>
