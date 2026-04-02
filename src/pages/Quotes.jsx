@@ -1,14 +1,14 @@
 // src/pages/Quotes.jsx
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { getQuotes, updateQuoteStatus } from '../lib/supabase'
+import { getQuotes, updateQuoteStatus, supabase, updateProduct } from '../lib/supabase'
 import { fmt, pct, calcMargin, marginClass, statusMap, formatDate } from '../lib/utils'
 
 export default function Quotes() {
   const [quotes,  setQuotes]  = useState([])
   const [loading, setLoading] = useState(true)
   const [detail,  setDetail]  = useState(null)
-  const [filter,  setFilter]  = useState('') // '' | 'pendiente' | 'aceptada' | 'rechazada'
+  const [filter,  setFilter]  = useState('')
 
   const load = () => getQuotes().then(({ data }) => { setQuotes(data || []); setLoading(false) })
   useEffect(() => { load() }, [])
@@ -25,7 +25,6 @@ export default function Quotes() {
       invoice_number: status === 'aceptada' ? quote?.quote_number?.replace('COT-', 'INV-') : prev.invoice_number
     }))
   }
-
 
   const exportQuote = async (q) => {
     if (!q.quote_items?.length) { alert('Esta cotización no tiene items para exportar'); return }
@@ -58,12 +57,18 @@ export default function Quotes() {
       const url  = URL.createObjectURL(blob)
       const a    = document.createElement('a')
       a.href = url
-      a.download = `BYN_${q.quote_number}_${q.client}.xlsx`
+      a.download = `BYN_${q.invoice_number || q.quote_number}_${q.client}.xlsx`
       a.click()
       URL.revokeObjectURL(url)
     } catch (err) {
       alert('Error: ' + err.message)
     }
+  }
+
+  const openDetail = (q) => {
+    // Always get fresh data from quotes array
+    const fresh = quotes.find(x => x.id === q.id) || q
+    setDetail(fresh)
   }
 
   return (
@@ -76,7 +81,6 @@ export default function Quotes() {
       </div>
 
       <div className="page">
-        {/* Filter tabs */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
           {[['', 'Todas'], ['pendiente', 'Pendientes'], ['aceptada', 'Aceptadas'], ['rechazada', 'Rechazadas']].map(([v, l]) => (
             <button key={v}
@@ -89,7 +93,7 @@ export default function Quotes() {
 
         <div className="card">
           {loading ? (
-            <p style={{ color: 'var(--white-3)', fontSize: 13 }}>Cargando cotizaciones...</p>
+            <p style={{ color: 'var(--text-3)', fontSize: 13 }}>Cargando cotizaciones...</p>
           ) : (
             <div className="table-wrap">
               <table>
@@ -98,7 +102,7 @@ export default function Quotes() {
                 </thead>
                 <tbody>
                   {filtered.length === 0 && (
-                    <tr><td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--white-3)' }}>
+                    <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--text-3)' }}>
                       Sin cotizaciones {filter ? 'en este estado' : 'aún'}
                     </td></tr>
                   )}
@@ -113,12 +117,12 @@ export default function Quotes() {
                         <td className="td-bold">{q.client}</td>
                         <td className="td-muted" style={{ fontSize: 12 }}>{formatDate(q.date)}</td>
                         <td className="td-muted" style={{ fontSize: 12 }}>{q.quote_items?.length ?? 0} artículos</td>
-                        <td className="td-gold">{fmt(q.total)}</td>
+                        <td className="td-mono" style={{ color: 'var(--navy)', fontWeight: 600 }}>{fmt(q.total)}</td>
                         <td><span className={`badge ${s.cls}`}>{s.label}</span></td>
                         <td>
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                            <button className="btn btn-ghost btn-sm" onClick={() => setDetail(q)}>Ver</button>
-                              <button className="btn btn-ghost btn-sm" onClick={() => exportQuote(q)} title="Exportar Excel">⬇ Excel</button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => openDetail(q)}>Ver / Editar</button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => exportQuote(q)}>⬇ Excel</button>
                             {q.status === 'pendiente' && (
                               <>
                                 <button className="btn btn-success btn-xs" onClick={() => handleStatus(q.id, 'aceptada')}>✓</button>
@@ -137,16 +141,69 @@ export default function Quotes() {
         </div>
       </div>
 
-      {detail && <QuoteDetail quote={detail} onClose={() => setDetail(null)} onStatusChange={handleStatus} onExport={exportQuote} />}
+      {detail && (
+        <QuoteDetail
+          quote={detail}
+          onClose={() => { setDetail(null); load() }}
+          onStatusChange={handleStatus}
+          onExport={exportQuote}
+        />
+      )}
     </>
   )
 }
 
-function QuoteDetail({ quote: q, onClose, onStatusChange, onExport }) {
-  const items = q.quote_items || []
+function QuoteDetail({ quote: initialQuote, onClose, onStatusChange, onExport }) {
+  const [q, setQ] = useState(initialQuote)
+  const [items, setItems] = useState(initialQuote.quote_items || [])
+  const [saving, setSaving] = useState(false)
+  const [saved,  setSaved]  = useState(false)
+
   const s = statusMap[q.status] || statusMap.pendiente
-  const hasCost = q.total_cost > 0
-  const margin = hasCost ? calcMargin(q.total_cost, q.total) : null
+
+  const updateItemPrice = (itemId, newPrice) => {
+    setItems(prev => prev.map(i => i.id === itemId ? { ...i, unit_price: newPrice } : i))
+    setSaved(false)
+  }
+
+  const updateItemQty = (itemId, newQty) => {
+    setItems(prev => prev.map(i => i.id === itemId ? { ...i, qty: newQty } : i))
+    setSaved(false)
+  }
+
+  const saveChanges = async () => {
+    setSaving(true)
+    // Update each quote item price in Supabase
+    for (const item of items) {
+      const price = parseFloat(item.unit_price || 0)
+      await supabase.from('quote_items').update({
+        unit_price: price,
+        qty: parseFloat(item.qty || 1),
+      }).eq('id', item.id)
+
+      // Update catalog price if product exists in catalog
+      if (item.product_id && price > 0) {
+        await updateProduct(item.product_id, { sale_price: price })
+      }
+    }
+
+    // Recalculate totals
+    const subtotal = items.reduce((a, i) => a + parseFloat(i.unit_price || 0) * parseFloat(i.qty || 1), 0)
+    const disc = parseFloat(q.discount_pct || 0) / 100
+    const transFee = parseFloat(q.transportation_fee || 0)
+    const total = subtotal * (1 - disc) + transFee
+
+    await supabase.from('quotes').update({ subtotal, total }).eq('id', q.id)
+    setQ(prev => ({ ...prev, subtotal, total }))
+    setSaving(false)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2500)
+  }
+
+  const subtotal = items.reduce((a, i) => a + parseFloat(i.unit_price || 0) * parseFloat(i.qty || 1), 0)
+  const disc     = parseFloat(q.discount_pct || 0) / 100
+  const transFee = parseFloat(q.transportation_fee || 0)
+  const total    = subtotal * (1 - disc) + transFee
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -155,32 +212,80 @@ function QuoteDetail({ quote: q, onClose, onStatusChange, onExport }) {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
               <div className="modal-title">{q.quote_number}</div>
+              {q.invoice_number && <span className="badge badge-success">→ {q.invoice_number}</span>}
               <span className={`badge ${s.cls}`}>{s.label}</span>
             </div>
-            <div style={{ fontSize: 12, color: 'var(--white-3)' }}>
+            <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
               {q.client} · {formatDate(q.date)}
               {q.valid_until && ` · Válida hasta ${formatDate(q.valid_until)}`}
+              {q.invoiced_at && ` · Facturado ${formatDate(q.invoiced_at?.split('T')[0])}`}
             </div>
           </div>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
 
+        {/* Alert that price changes update catalog */}
+        <div className="alert alert-info" style={{ marginBottom: 14, fontSize: 12 }}>
+          💡 Al editar precios aquí y guardar, el catálogo se actualiza automáticamente con el nuevo precio de venta.
+        </div>
+
         {items.length === 0 ? (
-          <p style={{ color: 'var(--white-3)', fontSize: 13 }}>Sin items en esta cotización.</p>
+          <p style={{ color: 'var(--text-3)', fontSize: 13 }}>Sin items en esta cotización.</p>
         ) : (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Producto</th><th>SKU</th><th>Cant.</th><th>P. Unitario</th><th>Subtotal</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th>Formato</th>
+                  <th style={{ textAlign: 'right' }}>Cant.</th>
+                  <th style={{ textAlign: 'right' }}>P. Unitario</th>
+                  <th style={{ textAlign: 'right' }}>Subtotal</th>
+                </tr>
+              </thead>
               <tbody>
-                {items.map(i => (
-                  <tr key={i.id}>
-                    <td className="td-bold">{i.product_name}</td>
-                    <td className="td-mono td-muted" style={{ fontSize: 11 }}>{i.product_sku || '—'}</td>
-                    <td>{parseFloat(i.qty)} {i.unit}</td>
-                    <td className="td-mono">{fmt(i.unit_price)}</td>
-                    <td className="td-gold">{fmt(i.unit_price * i.qty)}</td>
-                  </tr>
-                ))}
+                {items.map(i => {
+                  const price = parseFloat(i.unit_price || 0)
+                  const qty   = parseFloat(i.qty || 1)
+                  const hasPrice = price > 0
+                  return (
+                    <tr key={i.id}>
+                      <td className="td-bold">{i.product_name}</td>
+                      <td className="td-muted" style={{ fontSize: 12 }}>{i.unit || '—'}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        <input
+                          type="number" min="0.01" step="0.01"
+                          value={i.qty}
+                          onChange={e => updateItemQty(i.id, e.target.value)}
+                          style={{
+                            width: 70, padding: '4px 8px', fontSize: 13,
+                            background: 'var(--gray-1)', border: '1px solid var(--border)',
+                            borderRadius: 6, textAlign: 'right',
+                            fontFamily: 'var(--mono)', color: 'var(--text-1)'
+                          }}
+                        />
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <input
+                          type="number" min="0" step="0.01"
+                          value={i.unit_price}
+                          onChange={e => updateItemPrice(i.id, e.target.value)}
+                          placeholder="0.00"
+                          style={{
+                            width: 100, padding: '4px 8px', fontSize: 13,
+                            background: hasPrice ? 'var(--gray-1)' : 'rgba(217,119,6,0.08)',
+                            border: `1px solid ${hasPrice ? 'var(--border)' : 'rgba(217,119,6,0.4)'}`,
+                            borderRadius: 6, textAlign: 'right',
+                            fontFamily: 'var(--mono)', color: 'var(--text-1)'
+                          }}
+                        />
+                      </td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--navy)' }}>
+                        {fmt(price * qty)}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -189,28 +294,28 @@ function QuoteDetail({ quote: q, onClose, onStatusChange, onExport }) {
         <div className="divider" />
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 16 }}>
-          <div style={{ fontSize: 13, color: 'var(--white-3)', lineHeight: 1.9 }}>
+          <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.9 }}>
             {q.notes && <div>📋 {q.notes}</div>}
-            {hasCost && margin !== null && (
-              <div>Margen: <span className={marginClass(margin)} style={{ fontWeight: 600 }}>{pct(margin)}</span>
-                {' · '}Ganancia: <span style={{ color: 'var(--gold)' }}>{fmt(q.total - q.total_cost)}</span>
-              </div>
-            )}
-            {q.discount_pct > 0 && <div>Descuento aplicado: {q.discount_pct}%</div>}
+            {q.discount_pct > 0 && <div>Descuento: {q.discount_pct}%</div>}
+            {transFee > 0 && <div>Transportation Fee: {fmt(transFee)}</div>}
             {q.created_by && <div style={{ fontSize: 11 }}>Creada por {q.created_by}</div>}
           </div>
           <div style={{ textAlign: 'right' }}>
-            {q.discount_pct > 0 && (
-              <div style={{ fontSize: 12, color: 'var(--white-3)', marginBottom: 2 }}>Subtotal: {fmt(q.subtotal)}</div>
-            )}
-            <div style={{ fontSize: 11, color: 'var(--white-3)', textTransform: 'uppercase', letterSpacing: 1 }}>Total</div>
-            <div style={{ fontSize: 32, fontWeight: 700, color: 'var(--gold)', fontFamily: 'var(--mono)' }}>{fmt(q.total)}</div>
+            {q.discount_pct > 0 && <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 2 }}>Subtotal: {fmt(subtotal)}</div>}
+            <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 1 }}>Total</div>
+            <div style={{ fontSize: 32, fontWeight: 700, color: 'var(--navy)', fontFamily: 'var(--mono)' }}>{fmt(total)}</div>
           </div>
         </div>
 
         <div className="divider" />
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'center' }}>
-          <button className="btn btn-ghost" onClick={() => onExport(q)}>⬇ Exportar Excel</button>
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-ghost" onClick={() => onExport({ ...q, quote_items: items })}>⬇ Exportar Excel</button>
+            <button className="btn btn-primary" onClick={saveChanges} disabled={saving}>
+              {saving ? 'Guardando...' : saved ? '✓ Guardado' : 'Guardar Cambios'}
+            </button>
+          </div>
           {q.status === 'pendiente' && (
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn btn-danger" onClick={() => { onStatusChange(q.id, 'rechazada'); onClose() }}>Rechazar</button>
