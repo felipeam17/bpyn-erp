@@ -15,8 +15,13 @@ export default function Catalog() {
   const [modal,      setModal]      = useState(null) // null | 'new' | product_obj
   const [selected,   setSelected]   = useState(new Set()) // selected product ids
   const [deleting,   setDeleting]   = useState(false)
-  const [bulkCat,    setBulkCat]    = useState(false)  // show bulk category modal
+  const [bulkCat,    setBulkCat]    = useState(false)
   const [bulkCatId,  setBulkCatId]  = useState('')
+  const [bulkSup,    setBulkSup]    = useState(false)
+  const [bulkSupId,  setBulkSupId]  = useState('')
+  const [supFilter,  setSupFilter]  = useState('')
+  const [sortCol,    setSortCol]    = useState('')
+  const [sortDir,    setSortDir]    = useState('asc')
 
   const toggleSelect = (id) => setSelected(prev => {
     const next = new Set(prev)
@@ -55,6 +60,22 @@ export default function Catalog() {
     await load()
   }
 
+  const applyBulkSupplier = async () => {
+    if (!bulkSupId) return
+    for (const id of selected) {
+      await updateProduct(id, { supplier_id: bulkSupId })
+    }
+    setSelected(new Set())
+    setBulkSup(false)
+    setBulkSupId('')
+    await load()
+  }
+
+  const toggleSort = (col) => {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('asc') }
+  }
+
   const load = useCallback(async () => {
     const [p, c, s] = await Promise.all([getProducts(), getCategories(), getSuppliers()])
     setProducts(p.data || [])
@@ -65,12 +86,30 @@ export default function Catalog() {
 
   useEffect(() => { load() }, [load])
 
-  const filtered = products.filter(p => {
-    const q = search.toLowerCase()
-    const matchSearch = !q || p.name.toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q)
-    const matchCat = !catFilter || p.categories?.name === catFilter
-    return matchSearch && matchCat
-  })
+  const filtered = (() => {
+    let result = products.filter(p => {
+      const q = search.toLowerCase()
+      const matchSearch = !q || p.name.toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q)
+      const matchCat = !catFilter || p.categories?.name === catFilter
+      const matchSup = !supFilter || p.suppliers?.name === supFilter
+      return matchSearch && matchCat && matchSup
+    })
+    if (sortCol) {
+      result = [...result].sort((a, b) => {
+        let av, bv
+        if (sortCol === 'name')       { av = a.name; bv = b.name }
+        if (sortCol === 'price')      { av = a.sale_price; bv = b.sale_price }
+        if (sortCol === 'cost')       { av = a.avg_cost; bv = b.avg_cost }
+        if (sortCol === 'margin')     { av = calcMargin(a.avg_cost, a.sale_price); bv = calcMargin(b.avg_cost, b.sale_price) }
+        if (sortCol === 'stock')      { av = a.stock ?? -1; bv = b.stock ?? -1 }
+        if (sortCol === 'category')   { av = a.categories?.name || ''; bv = b.categories?.name || '' }
+        if (sortCol === 'supplier')   { av = a.suppliers?.name || ''; bv = b.suppliers?.name || '' }
+        if (typeof av === 'string') return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
+        return sortDir === 'asc' ? av - bv : bv - av
+      })
+    }
+    return result
+  })()
 
   return (
     <>
@@ -80,7 +119,10 @@ export default function Catalog() {
           {selected.size > 0 && (
             <>
               <button className="btn btn-ghost" onClick={() => setBulkCat(true)}>
-                🏷 Categoría para {selected.size} seleccionado{selected.size > 1 ? 's' : ''}
+                🏷 Categoría
+              </button>
+              <button className="btn btn-ghost" onClick={() => setBulkSup(true)}>
+                🚚 Proveedor
               </button>
               <button className="btn btn-danger" onClick={deleteSelected} disabled={deleting}>
                 {deleting ? 'Eliminando...' : `✕ Eliminar ${selected.size}`}
@@ -97,9 +139,13 @@ export default function Catalog() {
             <span className="search-icon">⌕</span>
             <input className="form-input" placeholder="Buscar por nombre o SKU..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-          <select className="form-select" style={{ width: 180 }} value={catFilter} onChange={e => setCatFilter(e.target.value)}>
+          <select className="form-select" style={{ width: 180 }} value={catFilter} onChange={e => { setCatFilter(e.target.value); setSelected(new Set()) }}>
             <option value="">Todas las categorías</option>
             {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+          </select>
+          <select className="form-select" style={{ width: 180 }} value={supFilter} onChange={e => { setSupFilter(e.target.value); setSelected(new Set()) }}>
+            <option value="">Todos los proveedores</option>
+            {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
           </select>
           <button className="btn btn-ghost btn-sm" onClick={toggleAll} style={{ whiteSpace: 'nowrap' }}>
             {selected.size === filtered.length && filtered.length > 0 ? '☐ Deseleccionar todos' : '☑ Seleccionar todos'}
@@ -121,11 +167,32 @@ export default function Catalog() {
                       <input type="checkbox"
                         checked={filtered.length > 0 && selected.size === filtered.length}
                         onChange={toggleAll}
-                        style={{ cursor: 'pointer', accentColor: 'var(--gold)' }}
+                        style={{ cursor: 'pointer', accentColor: 'var(--navy)' }}
                       />
                     </th>
-                    <th>SKU</th><th>Producto</th><th>Categoría</th><th>Proveedor</th>
-                    <th>Costo Prom.</th><th>P. Venta</th><th>Margen</th><th>Stock</th><th></th>
+                    <th>SKU</th>
+                    <th onClick={() => toggleSort('name')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                      Producto {sortCol==='name' ? (sortDir==='asc'?'↑':'↓') : '↕'}
+                    </th>
+                    <th onClick={() => toggleSort('category')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                      Categoría {sortCol==='category' ? (sortDir==='asc'?'↑':'↓') : '↕'}
+                    </th>
+                    <th onClick={() => toggleSort('supplier')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                      Proveedor {sortCol==='supplier' ? (sortDir==='asc'?'↑':'↓') : '↕'}
+                    </th>
+                    <th onClick={() => toggleSort('cost')} style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'right' }}>
+                      Costo {sortCol==='cost' ? (sortDir==='asc'?'↑':'↓') : '↕'}
+                    </th>
+                    <th onClick={() => toggleSort('price')} style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'right' }}>
+                      P. Venta {sortCol==='price' ? (sortDir==='asc'?'↑':'↓') : '↕'}
+                    </th>
+                    <th onClick={() => toggleSort('margin')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                      Margen {sortCol==='margin' ? (sortDir==='asc'?'↑':'↓') : '↕'}
+                    </th>
+                    <th onClick={() => toggleSort('stock')} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                      Stock {sortCol==='stock' ? (sortDir==='asc'?'↑':'↓') : '↕'}
+                    </th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -186,6 +253,33 @@ export default function Catalog() {
           )}
         </div>
       </div>
+
+      {bulkSup && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setBulkSup(false)}>
+          <div className="modal" style={{ maxWidth: 400 }}>
+            <div className="modal-header">
+              <div className="modal-title">Asignar Proveedor</div>
+              <button className="modal-close" onClick={() => setBulkSup(false)}>×</button>
+            </div>
+            <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 16 }}>
+              Se asignará el proveedor a <strong>{selected.size} producto{selected.size > 1 ? 's' : ''}</strong>.
+            </p>
+            <div className="form-group">
+              <label className="form-label">Proveedor</label>
+              <select className="form-select" value={bulkSupId} onChange={e => setBulkSupId(e.target.value)} autoFocus>
+                <option value="">— Selecciona un proveedor —</option>
+                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
+              <button className="btn btn-ghost" onClick={() => setBulkSup(false)}>Cancelar</button>
+              <button className="btn btn-primary" onClick={applyBulkSupplier} disabled={!bulkSupId}>
+                Aplicar a {selected.size} producto{selected.size > 1 ? 's' : ''}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {bulkCat && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setBulkCat(false)}>
