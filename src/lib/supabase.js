@@ -109,5 +109,11 @@ export const createQuote = async (quoteData, items) => {
   return { data: quote }
 }
 
-export const updateQuoteStatus = (id, status) =>
-  supabase.from('quotes').update({ status }).eq('id', id)
+export const updateQuoteStatus = (id, status, quoteNumber) => {
+  const updates = { status }
+  if (status === 'aceptada' && quoteNumber) {
+    updates.invoice_number = quoteNumber.replace('COT-', 'INV-')
+    updates.invoiced_at = new Date().toISOString()
+  }
+  return supabase.from('quotes').update(updates).eq('id', id)
+}

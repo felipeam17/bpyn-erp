@@ -16,9 +16,14 @@ export default function Quotes() {
   const filtered = filter ? quotes.filter(q => q.status === filter) : quotes
 
   const handleStatus = async (id, status) => {
-    await updateQuoteStatus(id, status)
+    const quote = quotes.find(q => q.id === id)
+    await updateQuoteStatus(id, status, quote?.quote_number)
     await load()
-    if (detail?.id === id) setDetail(prev => ({ ...prev, status }))
+    if (detail?.id === id) setDetail(prev => ({
+      ...prev,
+      status,
+      invoice_number: status === 'aceptada' ? quote?.quote_number?.replace('COT-', 'INV-') : prev.invoice_number
+    }))
   }
 
 
@@ -30,7 +35,8 @@ export default function Quotes() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           quote: {
-            quote_number: q.quote_number,
+            quote_number: q.invoice_number || q.quote_number,
+            is_invoice: !!q.invoice_number,
             client: q.client,
             date: q.date,
             marina: q.notes || '',
@@ -88,7 +94,7 @@ export default function Quotes() {
             <div className="table-wrap">
               <table>
                 <thead>
-                  <tr><th>Número</th><th>Cliente / Yate</th><th>Fecha</th><th>Items</th><th>Total</th><th>Estado</th><th>Acciones</th></tr>
+                  <tr><th>Cotización</th><th>Invoice</th><th>Cliente / Yate</th><th>Fecha</th><th>Items</th><th>Total</th><th>Estado</th><th>Acciones</th></tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 && (
@@ -101,6 +107,9 @@ export default function Quotes() {
                     return (
                       <tr key={q.id}>
                         <td className="td-mono td-muted" style={{ fontSize: 11 }}>{q.quote_number}</td>
+                        <td className="td-mono" style={{ fontSize: 11, color: q.invoice_number ? 'var(--success)' : 'var(--text-3)' }}>
+                          {q.invoice_number || '—'}
+                        </td>
                         <td className="td-bold">{q.client}</td>
                         <td className="td-muted" style={{ fontSize: 12 }}>{formatDate(q.date)}</td>
                         <td className="td-muted" style={{ fontSize: 12 }}>{q.quote_items?.length ?? 0} artículos</td>

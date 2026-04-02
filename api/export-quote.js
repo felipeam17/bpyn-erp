@@ -78,7 +78,8 @@ export default async function handler(req, res) {
     cell('C2', quote.client, navyFont(11, true))
 
     // ── Quote number ─────────────────────────────────────────────────
-    cell('C12', `QUOTE ${quote.quote_number}`, navyFont(14, true))
+    const docLabel = quote.is_invoice ? 'INVOICE' : 'QUOTE'
+    cell('C12', `${docLabel} ${quote.quote_number}`, navyFont(14, true))
 
     // ── CLIENT / DATE / MARINA ───────────────────────────────────────
     cell('A14', 'CLIENT',        { name: 'Arial', size: 8, color: { argb: 'FF888888' } })
@@ -233,7 +234,8 @@ export default async function handler(req, res) {
     discCell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true }
 
     // ── Stream response ───────────────────────────────────────────────
-    const filename = `BYN_${quote.quote_number}_${quote.client.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`
+    const prefix = quote.is_invoice ? 'INV' : 'COT'
+    const filename = `BYN_${prefix}_${quote.quote_number}_${quote.client.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
 
