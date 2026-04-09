@@ -20,12 +20,28 @@ export const getUser = () => supabase.auth.getUser()
 
 // ── Products ──────────────────────────────────────────────────────
 export const getProducts = async (includeInactive = false) => {
-  let q = supabase
-    .from('products')
-    .select(`*, categories(name), suppliers(name)`)
-    .order('name')
-  if (!includeInactive) q = q.eq('active', true)
-  return q
+  // Fetch all products in batches of 1000 to bypass Supabase default limit
+  const allData = []
+  let from = 0
+  const batchSize = 1000
+
+  while (true) {
+    let q = supabase
+      .from('products')
+      .select('*, categories(name), suppliers(name)')
+      .order('name')
+      .range(from, from + batchSize - 1)
+    if (!includeInactive) q = q.eq('active', true)
+
+    const { data, error } = await q
+    if (error) return { data: allData, error }
+    if (!data || data.length === 0) break
+    allData.push(...data)
+    if (data.length < batchSize) break
+    from += batchSize
+  }
+
+  return { data: allData, error: null }
 }
 
 export const createProduct = (data) =>
