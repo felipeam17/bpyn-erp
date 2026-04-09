@@ -233,6 +233,38 @@ export default async function handler(req, res) {
     discCell.font  = { name: 'Arial', size: 8, italic: true, color: { argb: 'FF888888' } }
     discCell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true }
 
+    // ── Contact Information ───────────────────────────────────────────
+    const contactRow = disclaimerRow + 3
+    const contactBorder = {
+      top:    { style: 'medium', color: { argb: 'FF000000' } },
+      bottom: { style: 'medium', color: { argb: 'FF000000' } },
+      left:   { style: 'medium', color: { argb: 'FF000000' } },
+      right:  { style: 'medium', color: { argb: 'FF000000' } },
+    }
+    const thinBorder = {
+      left:  { style: 'medium', color: { argb: 'FF000000' } },
+      right: { style: 'medium', color: { argb: 'FF000000' } },
+    }
+
+    const contactData = [
+      { text: 'CONTACT INFORMATION', font: { name: 'Arial', size: 9, bold: false }, border: { ...contactBorder, bottom: undefined } },
+      { text: 'Felipe Arias',        font: { name: 'Arial', size: 9 }, border: thinBorder },
+      { text: 'farias@blueyachtnautica.com', font: { name: 'Arial', size: 9, color: { argb: 'FF0563C1' } }, border: thinBorder },
+      { text: 'Juan Antonio',        font: { name: 'Arial', size: 9 }, border: thinBorder },
+      { text: 'jarango@blueyachtnautica.com', font: { name: 'Arial', size: 9, color: { argb: 'FF0563C1' } }, border: thinBorder },
+      { text: 'Whatsapp: +507 6690-6667', font: { name: 'Arial', size: 9 }, border: { ...thinBorder, bottom: { style: 'medium', color: { argb: 'FF000000' } } } },
+    ]
+
+    contactData.forEach((row, i) => {
+      const r = contactRow + i
+      ws.getRow(r).height = 16
+      const c = ws.getRow(r).getCell(1)
+      c.value = row.text
+      c.font  = row.font
+      c.border = row.border
+      c.alignment = { horizontal: 'left', vertical: 'middle' }
+    })
+
     // ── Stream response ───────────────────────────────────────────────
     const prefix = quote.is_invoice ? 'INV' : 'COT'
     const filename = `BYN_${prefix}_${quote.quote_number}_${quote.client.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`
