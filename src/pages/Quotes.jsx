@@ -1,7 +1,7 @@
 // src/pages/Quotes.jsx
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { getQuotes, updateQuoteStatus, supabase, updateProduct } from '../lib/supabase'
+import { getQuotes, updateQuoteStatus, supabase, updateProduct, getProducts } from '../lib/supabase'
 import { fmt, pct, calcMargin, marginClass, statusMap, formatDate } from '../lib/utils'
 
 export default function Quotes() {
@@ -29,6 +29,17 @@ export default function Quotes() {
   const exportQuote = async (q) => {
     if (!q.quote_items?.length) { alert('Esta cotización no tiene items para exportar'); return }
     try {
+      // Build a map of product_id -> supplier name for this quote's items
+      const supplierMap = {}
+      const productIds = q.quote_items.filter(i => i.product_id).map(i => i.product_id)
+      if (productIds.length > 0) {
+        const { data: prods } = await supabase
+          .from('products')
+          .select('id, suppliers(name)')
+          .in('id', productIds)
+        if (prods) prods.forEach(p => { supplierMap[p.id] = p.suppliers?.name || '' })
+      }
+
       const res = await fetch('/api/export-quote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -48,7 +59,7 @@ export default function Quotes() {
             format: i.unit || '',
             qty: i.qty,
             unit_price: i.unit_price,
-            supplier: '',
+            supplier: i.product_id ? (supplierMap[i.product_id] || '') : '',
           }))
         })
       })
