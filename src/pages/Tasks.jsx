@@ -215,6 +215,7 @@ export default function Tasks() {
       {modal && (
         <TaskModal
           task={modal === 'new' ? null : modal}
+          team={team}
           quotes={quotes}
           onClose={() => setModal(null)}
           onSave={load}
@@ -225,7 +226,7 @@ export default function Tasks() {
   )
 }
 
-function TaskModal({ task, quotes, onClose, onSave, userEmail }) {
+function TaskModal({ task, quotes, team, onClose, onSave, userEmail }) {
   const isNew = !task
   const [form, setForm] = useState({
     title:       task?.title       || '',
