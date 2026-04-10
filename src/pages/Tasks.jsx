@@ -1,6 +1,6 @@
 // src/pages/Tasks.jsx
 import { useState, useEffect } from 'react'
-import { getTasks, createTask, updateTask, deleteTask, getQuotes } from '../lib/supabase'
+import { getTasks, createTask, updateTask, deleteTask, getQuotes, supabase } from '../lib/supabase'
 import { formatDate } from '../lib/utils'
 import { useAuth } from '../App'
 
@@ -17,16 +17,13 @@ const PRIORITY = {
   baja:   { label: 'Baja',   cls: 'badge-muted'   },
 }
 
-const TEAM = [
-  'Felipe Arias',
-  'Juan Antonio',
-  'Sin asignar',
-]
+
 
 export default function Tasks() {
   const { user } = useAuth()
   const [tasks,   setTasks]   = useState([])
   const [quotes,  setQuotes]  = useState([])
+  const [team,    setTeam]    = useState([])
   const [loading, setLoading] = useState(true)
   const [modal,   setModal]   = useState(null) // null | 'new' | task_obj
   const [filters, setFilters] = useState({ status: '', priority: '', assigned: '' })
@@ -38,7 +35,15 @@ export default function Tasks() {
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [])
+  const loadTeam = async () => {
+    // Get team members from auth users via RPC
+    const { data, error } = await supabase.rpc('get_team_members')
+    if (data && !error) {
+      setTeam(data.map(u => u.email))
+    }
+  }
+
+  useEffect(() => { load(); loadTeam() }, [])
 
   const filtered = tasks.filter(t => {
     const matchStatus   = !filters.status   || t.status === filters.status
