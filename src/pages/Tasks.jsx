@@ -112,7 +112,7 @@ export default function Tasks() {
           <select className="form-select" style={{ width: 180 }}
             value={filters.assigned} onChange={e => setFilters(f => ({ ...f, assigned: e.target.value }))}>
             <option value="">Todo el equipo</option>
-            {TEAM.map(t => <option key={t} value={t}>{t}</option>)}
+            {team.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
           {(filters.status || filters.priority || filters.assigned) && (
             <button className="btn btn-ghost btn-sm" onClick={() => setFilters({ status: '', priority: '', assigned: '' })}>
@@ -294,7 +294,7 @@ function TaskModal({ task, quotes, onClose, onSave, userEmail }) {
             <label className="form-label">Asignado a</label>
             <select className="form-select" value={form.assigned_to} onChange={e => set('assigned_to', e.target.value)}>
               <option value="">— Sin asignar —</option>
-              {TEAM.map(t => <option key={t} value={t}>{t}</option>)}
+              {team.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div className="form-group">
