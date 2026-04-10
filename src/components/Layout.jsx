@@ -11,6 +11,7 @@ const NAV = [
   { to: '/import',    icon: '↑', label: 'Importar' },
   { to: '/suppliers',  icon: '⊞', label: 'Proveedores' },
   { section: 'Ventas' },
+  { to: '/tasks', icon: '✓', label: 'Operaciones' },
   { to: '/quotes',    icon: '◉', label: 'Cotizaciones' },
   { section: 'Análisis' },
   { to: '/margins',   icon: '◎', label: 'Márgenes' },

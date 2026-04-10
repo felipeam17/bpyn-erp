@@ -10,6 +10,7 @@ import Quotes from './pages/Quotes'
 import NewQuote from './pages/NewQuote'
 import Margins from './pages/Margins'
 import Suppliers from './pages/Suppliers'
+import Tasks from './pages/Tasks'
 import Import from './pages/Import'
 
 export const AuthContext = createContext(null)
@@ -49,7 +50,6 @@ export default function App() {
             <Route path="quotes" element={<Quotes />} />
             <Route path="quotes/new" element={<NewQuote />} />
             <Route path="margins" element={<Margins />} />
-            <Route path="suppliers" element={<Suppliers />} />
             <Route path="import" element={<Import />} />
           </Route>
         </Routes>

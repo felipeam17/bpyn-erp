@@ -88,6 +88,22 @@ export const createSupplier = (data) =>
 export const updateSupplier = (id, data) =>
   supabase.from('suppliers').update(data).eq('id', id).select().single()
 
+// ── Tasks ─────────────────────────────────────────────────────────
+export const getTasks = () =>
+  supabase
+    .from('tasks')
+    .select('*, quotes(quote_number, client)')
+    .order('created_at', { ascending: false })
+
+export const createTask = (data) =>
+  supabase.from('tasks').insert(data).select().single()
+
+export const updateTask = (id, data) =>
+  supabase.from('tasks').update(data).eq('id', id).select().single()
+
+export const deleteTask = (id) =>
+  supabase.from('tasks').delete().eq('id', id)
+
 // ── Quotes ────────────────────────────────────────────────────────
 export const getQuotes = () =>
   supabase
