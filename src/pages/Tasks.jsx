@@ -8,8 +8,8 @@ const COLUMNS = [
   { key: 'por_cotizar',  label: 'Por Cotizar',  color: '#d97706', bg: 'rgba(217,119,6,0.06)'    },
   { key: 'aprobadas',    label: 'Aprobadas',    color: '#1a56db', bg: 'rgba(26,86,219,0.06)'    },
   { key: 'por_entregar', label: 'Por Entregar', color: '#dc2626', bg: 'rgba(220,38,38,0.06)'    },
-  { key: 'entregadas',   label: 'Entregadas',   color: '#16a34a', bg: 'rgba(22,163,74,0.06)'    },
-  { key: 'por_facturar', label: 'Por Facturar', color: '#7c3aed', bg: 'rgba(124,58,237,0.06)'   },
+  { key: 'entregadas',   label: 'Entregadas / Por Facturar',   color: '#16a34a', bg: 'rgba(22,163,74,0.06)'    },
+  { key: 'por_facturar', label: 'Facturado', color: '#7c3aed', bg: 'rgba(124,58,237,0.06)'   },
 ]
 
 const PRIORITY = {
