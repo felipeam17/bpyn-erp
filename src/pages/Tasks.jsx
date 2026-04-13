@@ -5,10 +5,10 @@ import { formatDate } from '../lib/utils'
 import { useAuth } from '../App'
 
 const STATUS = {
-  pendiente:   { label: 'Pendiente',   cls: 'badge-warning', color: 'var(--warning)' },
-  en_proceso:  { label: 'En Proceso',  cls: 'badge-info',    color: 'var(--info)'    },
-  completado:  { label: 'Completado',  cls: 'badge-success', color: 'var(--success)' },
-  cancelado:   { label: 'Cancelado',   cls: 'badge-muted',   color: 'var(--text-3)'  },
+  por_cotizar:  { label: 'Por Cotizar',  cls: 'badge-warning', color: 'var(--warning)' },
+  aprobadas:    { label: 'Aprobadas',    cls: 'badge-info',    color: 'var(--info)'    },
+  por_entregar: { label: 'Por Entregar', cls: 'badge-danger',  color: 'var(--danger)'  },
+  entregadas:   { label: 'Entregadas',   cls: 'badge-success', color: 'var(--success)' },
 }
 
 const PRIORITY = {
@@ -65,9 +65,10 @@ export default function Tasks() {
 
   // Summary counts
   const counts = {
-    pendiente:  tasks.filter(t => t.status === 'pendiente').length,
-    en_proceso: tasks.filter(t => t.status === 'en_proceso').length,
-    completado: tasks.filter(t => t.status === 'completado').length,
+    por_cotizar:  tasks.filter(t => t.status === 'por_cotizar').length,
+    aprobadas:    tasks.filter(t => t.status === 'aprobadas').length,
+    por_entregar: tasks.filter(t => t.status === 'por_entregar').length,
+    entregadas:   tasks.filter(t => t.status === 'entregadas').length,
   }
 
   const isOverdue = (t) => t.due_date && t.status !== 'completado' && t.status !== 'cancelado'
@@ -84,11 +85,12 @@ export default function Tasks() {
 
       <div className="page">
         {/* Summary stats */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
           {[
-            { key: 'pendiente',  label: 'Pendientes',  color: 'var(--warning)' },
-            { key: 'en_proceso', label: 'En Proceso',  color: 'var(--info)'    },
-            { key: 'completado', label: 'Completadas', color: 'var(--success)' },
+            { key: 'por_cotizar',  label: 'Por Cotizar',  color: 'var(--warning)' },
+            { key: 'aprobadas',    label: 'Aprobadas',    color: 'var(--info)'    },
+            { key: 'por_entregar', label: 'Por Entregar', color: 'var(--danger)'  },
+            { key: 'entregadas',   label: 'Entregadas',   color: 'var(--success)' },
           ].map(s => (
             <div key={s.key} className="stat-card" style={{ borderTop: `3px solid ${s.color}` }}>
               <div className="stat-label">{s.label}</div>
@@ -112,7 +114,7 @@ export default function Tasks() {
           <select className="form-select" style={{ width: 180 }}
             value={filters.assigned} onChange={e => setFilters(f => ({ ...f, assigned: e.target.value }))}>
             <option value="">Todo el equipo</option>
-            {team.map(t => <option key={t} value={t}>{t}</option>)}
+            {TEAM.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
           {(filters.status || filters.priority || filters.assigned) && (
             <button className="btn btn-ghost btn-sm" onClick={() => setFilters({ status: '', priority: '', assigned: '' })}>
@@ -215,7 +217,6 @@ export default function Tasks() {
       {modal && (
         <TaskModal
           task={modal === 'new' ? null : modal}
-          team={team}
           quotes={quotes}
           onClose={() => setModal(null)}
           onSave={load}
@@ -226,14 +227,14 @@ export default function Tasks() {
   )
 }
 
-function TaskModal({ task, quotes, team, onClose, onSave, userEmail }) {
+function TaskModal({ task, quotes, onClose, onSave, userEmail }) {
   const isNew = !task
   const [form, setForm] = useState({
     title:       task?.title       || '',
     description: task?.description || '',
     quote_id:    task?.quote_id    || '',
     assigned_to: task?.assigned_to || '',
-    status:      task?.status      || 'pendiente',
+    status:      task?.status      || 'por_cotizar',
     priority:    task?.priority    || 'normal',
     due_date:    task?.due_date    || '',
   })
@@ -295,7 +296,7 @@ function TaskModal({ task, quotes, team, onClose, onSave, userEmail }) {
             <label className="form-label">Asignado a</label>
             <select className="form-select" value={form.assigned_to} onChange={e => set('assigned_to', e.target.value)}>
               <option value="">— Sin asignar —</option>
-              {team.map(t => <option key={t} value={t}>{t}</option>)}
+              {TEAM.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div className="form-group">
