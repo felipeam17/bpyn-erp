@@ -17,15 +17,13 @@ const PRIORITY = {
   baja:   { label: 'Baja',   cls: 'badge-muted'   },
 }
 
-
-
 export default function Tasks() {
   const { user } = useAuth()
   const [tasks,   setTasks]   = useState([])
   const [quotes,  setQuotes]  = useState([])
   const [team,    setTeam]    = useState([])
   const [loading, setLoading] = useState(true)
-  const [modal,   setModal]   = useState(null) // null | 'new' | task_obj
+  const [modal,   setModal]   = useState(null)
   const [filters, setFilters] = useState({ status: '', priority: '', assigned: '' })
 
   const load = async () => {
@@ -36,11 +34,8 @@ export default function Tasks() {
   }
 
   const loadTeam = async () => {
-    // Get team members from auth users via RPC
-    const { data, error } = await supabase.rpc('get_team_members')
-    if (data && !error) {
-      setTeam(data.map(u => u.email))
-    }
+    const { data } = await supabase.rpc('get_team_members')
+    if (data) setTeam(data.map(u => u.email))
   }
 
   useEffect(() => { load(); loadTeam() }, [])
@@ -63,7 +58,6 @@ export default function Tasks() {
     await load()
   }
 
-  // Summary counts
   const counts = {
     por_cotizar:  tasks.filter(t => t.status === 'por_cotizar').length,
     aprobadas:    tasks.filter(t => t.status === 'aprobadas').length,
@@ -71,7 +65,7 @@ export default function Tasks() {
     entregadas:   tasks.filter(t => t.status === 'entregadas').length,
   }
 
-  const isOverdue = (t) => t.due_date && t.status !== 'completado' && t.status !== 'cancelado'
+  const isOverdue = (t) => t.due_date && t.status !== 'entregadas'
     && new Date(t.due_date) < new Date()
 
   return (
@@ -84,7 +78,6 @@ export default function Tasks() {
       </div>
 
       <div className="page">
-        {/* Summary stats */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
           {[
             { key: 'por_cotizar',  label: 'Por Cotizar',  color: 'var(--warning)' },
@@ -99,7 +92,6 @@ export default function Tasks() {
           ))}
         </div>
 
-        {/* Filters */}
         <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
           <select className="form-select" style={{ width: 160 }}
             value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
@@ -111,10 +103,10 @@ export default function Tasks() {
             <option value="">Toda prioridad</option>
             {Object.entries(PRIORITY).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
-          <select className="form-select" style={{ width: 180 }}
+          <select className="form-select" style={{ width: 200 }}
             value={filters.assigned} onChange={e => setFilters(f => ({ ...f, assigned: e.target.value }))}>
             <option value="">Todo el equipo</option>
-            {TEAM.map(t => <option key={t} value={t}>{t}</option>)}
+            {team.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
           {(filters.status || filters.priority || filters.assigned) && (
             <button className="btn btn-ghost btn-sm" onClick={() => setFilters({ status: '', priority: '', assigned: '' })}>
@@ -133,7 +125,7 @@ export default function Tasks() {
             <div className="empty-state">
               <div className="empty-icon">◎</div>
               <div className="empty-title">Sin tareas{filters.status || filters.priority || filters.assigned ? ' para este filtro' : ' aún'}</div>
-              <p style={{ fontSize: 13 }}>Crea la primera tarea para empezar a organizar las operaciones del equipo.</p>
+              <p style={{ fontSize: 13 }}>Crea la primera tarea para empezar a organizar las operaciones.</p>
             </div>
           ) : (
             <div className="table-wrap">
@@ -152,7 +144,7 @@ export default function Tasks() {
                 <tbody>
                   {filtered.map(t => {
                     const overdue = isOverdue(t)
-                    const s = STATUS[t.status] || STATUS.pendiente
+                    const s = STATUS[t.status] || STATUS.por_cotizar
                     const p = PRIORITY[t.priority] || PRIORITY.normal
                     return (
                       <tr key={t.id} style={{ background: overdue ? 'rgba(220,38,38,0.03)' : undefined }}>
@@ -171,7 +163,7 @@ export default function Tasks() {
                             : <span style={{ color: 'var(--text-3)' }}>—</span>
                           }
                         </td>
-                        <td style={{ fontSize: 13 }}>
+                        <td>
                           {t.assigned_to
                             ? <span className="badge badge-muted">{t.assigned_to}</span>
                             : <span style={{ color: 'var(--text-3)' }}>—</span>
@@ -191,7 +183,7 @@ export default function Tasks() {
                             className="form-select"
                             value={t.status}
                             onChange={e => handleStatusChange(t.id, e.target.value)}
-                            style={{ width: 130, padding: '4px 8px', fontSize: 12 }}
+                            style={{ width: 140, padding: '4px 8px', fontSize: 12 }}
                           >
                             {Object.entries(STATUS).map(([k, v]) => (
                               <option key={k} value={k}>{v.label}</option>
@@ -218,6 +210,7 @@ export default function Tasks() {
         <TaskModal
           task={modal === 'new' ? null : modal}
           quotes={quotes}
+          team={team}
           onClose={() => setModal(null)}
           onSave={load}
           userEmail={user?.email}
@@ -227,7 +220,7 @@ export default function Tasks() {
   )
 }
 
-function TaskModal({ task, quotes, onClose, onSave, userEmail }) {
+function TaskModal({ task, quotes, team, onClose, onSave, userEmail }) {
   const isNew = !task
   const [form, setForm] = useState({
     title:       task?.title       || '',
@@ -286,9 +279,7 @@ function TaskModal({ task, quotes, onClose, onSave, userEmail }) {
             <select className="form-select" value={form.quote_id} onChange={e => set('quote_id', e.target.value)}>
               <option value="">— Sin cotización —</option>
               {quotes.map(q => (
-                <option key={q.id} value={q.id}>
-                  {q.quote_number} · {q.client}
-                </option>
+                <option key={q.id} value={q.id}>{q.quote_number} · {q.client}</option>
               ))}
             </select>
           </div>
@@ -296,7 +287,7 @@ function TaskModal({ task, quotes, onClose, onSave, userEmail }) {
             <label className="form-label">Asignado a</label>
             <select className="form-select" value={form.assigned_to} onChange={e => set('assigned_to', e.target.value)}>
               <option value="">— Sin asignar —</option>
-              {TEAM.map(t => <option key={t} value={t}>{t}</option>)}
+              {team.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div className="form-group">
