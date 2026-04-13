@@ -9,6 +9,7 @@ const COLUMNS = [
   { key: 'aprobadas',    label: 'Aprobadas',    color: '#1a56db', bg: 'rgba(26,86,219,0.06)'    },
   { key: 'por_entregar', label: 'Por Entregar', color: '#dc2626', bg: 'rgba(220,38,38,0.06)'    },
   { key: 'entregadas',   label: 'Entregadas',   color: '#16a34a', bg: 'rgba(22,163,74,0.06)'    },
+  { key: 'por_facturar', label: 'Por Facturar', color: '#7c3aed', bg: 'rgba(124,58,237,0.06)'   },
 ]
 
 const PRIORITY = {
@@ -93,7 +94,7 @@ export default function Tasks() {
         {loading ? (
           <p style={{ color: 'var(--text-3)', fontSize: 13 }}>Cargando...</p>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, alignItems: 'start', minHeight: '70vh' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, alignItems: 'start', minHeight: '70vh' }}>
             {COLUMNS.map(col => {
               const colTasks = tasks.filter(t => t.status === col.key)
               const isOver = dragOver === col.key
