@@ -1,7 +1,7 @@
 // src/pages/Quotes.jsx
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { getQuotes, updateQuoteStatus, supabase, updateProduct, getProducts } from '../lib/supabase'
+import { getQuotes, updateQuoteStatus, supabase, updateProduct, getProducts, createProduct } from '../lib/supabase'
 import { fmt, pct, calcMargin, marginClass, statusMap, formatDate } from '../lib/utils'
 
 export default function Quotes() {
@@ -14,6 +14,14 @@ export default function Quotes() {
   useEffect(() => { load() }, [])
 
   const filtered = filter ? quotes.filter(q => q.status === filter) : quotes
+
+  const handleDelete = async (id) => {
+    if (!confirm('¿Eliminar esta cotización permanentemente? Esta acción no se puede deshacer.')) return
+    // Delete quote items first, then quote
+    await supabase.from('quote_items').delete().eq('quote_id', id)
+    await supabase.from('quotes').delete().eq('id', id)
+    await load()
+  }
 
   const handleStatus = async (id, status) => {
     const quote = quotes.find(q => q.id === id)
@@ -140,6 +148,7 @@ export default function Quotes() {
                                 <button className="btn btn-danger btn-xs" onClick={() => handleStatus(q.id, 'rechazada')}>✗</button>
                               </>
                             )}
+                            <button className="btn btn-danger btn-xs" onClick={() => handleDelete(q.id)} title="Eliminar cotización">🗑</button>
                           </div>
                         </td>
                       </tr>
@@ -158,56 +167,93 @@ export default function Quotes() {
           onClose={() => { setDetail(null); load() }}
           onStatusChange={handleStatus}
           onExport={exportQuote}
+          onDelete={handleDelete}
         />
       )}
     </>
   )
 }
 
-function QuoteDetail({ quote: initialQuote, onClose, onStatusChange, onExport }) {
-  const [q, setQ] = useState(initialQuote)
-  const [items, setItems] = useState(initialQuote.quote_items || [])
+function QuoteDetail({ quote: initialQuote, onClose, onStatusChange, onExport, onDelete }) {
+  const [q, setQ]           = useState(initialQuote)
+  const [items, setItems]   = useState(initialQuote.quote_items || [])
   const [saving, setSaving] = useState(false)
   const [saved,  setSaved]  = useState(false)
+  const [newItem, setNewItem] = useState({ name: '', format: '', qty: 1, price: '' })
+  const [showAdd, setShowAdd] = useState(false)
+  const [search,  setSearch]  = useState('')
+  const [catalog, setCatalog] = useState([])
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   const s = statusMap[q.status] || statusMap.pendiente
 
-  const updateItemPrice = (itemId, newPrice) => {
-    setItems(prev => prev.map(i => i.id === itemId ? { ...i, unit_price: newPrice } : i))
+  useEffect(() => {
+    getProducts().then(({ data }) => setCatalog(data || []))
+  }, [])
+
+  const filteredCatalog = search.trim()
+    ? catalog.filter(p => p.name.toLowerCase().includes(search.toLowerCase()) || (p.sku||'').toLowerCase().includes(search.toLowerCase())).slice(0, 6)
+    : []
+
+  const updateItemField = (itemId, field, value) => {
+    setItems(prev => prev.map(i => i.id === itemId ? { ...i, [field]: value } : i))
     setSaved(false)
   }
 
-  const updateItemQty = (itemId, newQty) => {
-    setItems(prev => prev.map(i => i.id === itemId ? { ...i, qty: newQty } : i))
+  const removeItem = async (itemId) => {
+    await supabase.from('quote_items').delete().eq('id', itemId)
+    setItems(prev => prev.filter(i => i.id !== itemId))
     setSaved(false)
+  }
+
+  const addFromCatalog = async (p) => {
+    const { data } = await supabase.from('quote_items').insert({
+      quote_id: q.id, product_id: p.id,
+      product_name: p.name, product_sku: p.sku || '',
+      unit: p.unit, unit_cost: p.avg_cost || 0,
+      unit_price: p.sale_price, qty: 1,
+    }).select().single()
+    if (data) setItems(prev => [...prev, data])
+    setSearch(''); setPickerOpen(false); setSaved(false)
+  }
+
+  const addManualItem = async () => {
+    if (!newItem.name.trim()) return
+    const { data } = await supabase.from('quote_items').insert({
+      quote_id: q.id, product_id: null,
+      product_name: newItem.name.trim(),
+      product_sku: '',
+      unit: newItem.format || 'unidad',
+      unit_cost: 0,
+      unit_price: newItem.price ? parseFloat(newItem.price) : 0,
+      qty: parseFloat(newItem.qty) || 1,
+    }).select().single()
+    if (data) setItems(prev => [...prev, data])
+    setNewItem({ name: '', format: '', qty: 1, price: '' })
+    setShowAdd(false); setSaved(false)
   }
 
   const saveChanges = async () => {
     setSaving(true)
-    // Update each quote item price in Supabase
     for (const item of items) {
       const price = parseFloat(item.unit_price || 0)
       await supabase.from('quote_items').update({
+        product_name: item.product_name,
         unit_price: price,
         qty: parseFloat(item.qty || 1),
+        unit: item.unit || '',
       }).eq('id', item.id)
-
-      // Update catalog price if product exists in catalog
       if (item.product_id && price > 0) {
         await updateProduct(item.product_id, { sale_price: price })
       }
     }
-
-    // Recalculate totals
     const subtotal = items.reduce((a, i) => a + parseFloat(i.unit_price || 0) * parseFloat(i.qty || 1), 0)
     const disc = parseFloat(q.discount_pct || 0) / 100
     const transFee = parseFloat(q.transportation_fee || 0)
     const total = subtotal * (1 - disc) + transFee
-
     await supabase.from('quotes').update({ subtotal, total }).eq('id', q.id)
     setQ(prev => ({ ...prev, subtotal, total }))
-    setSaving(false)
-    setSaved(true)
+    setSaving(false); setSaved(true)
     setTimeout(() => setSaved(false), 2500)
   }
 
@@ -327,12 +373,15 @@ function QuoteDetail({ quote: initialQuote, onClose, onStatusChange, onExport })
               {saving ? 'Guardando...' : saved ? '✓ Guardado' : 'Guardar Cambios'}
             </button>
           </div>
-          {q.status === 'pendiente' && (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-danger" onClick={() => { onStatusChange(q.id, 'rechazada'); onClose() }}>Rechazar</button>
-              <button className="btn btn-success" onClick={() => { onStatusChange(q.id, 'aceptada'); onClose() }}>✓ Marcar como Aceptada</button>
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {q.status === 'pendiente' && (
+              <>
+                <button className="btn btn-danger" onClick={() => { onStatusChange(q.id, 'rechazada'); onClose() }}>Rechazar</button>
+                <button className="btn btn-success" onClick={() => { onStatusChange(q.id, 'aceptada'); onClose() }}>✓ Aceptada</button>
+              </>
+            )}
+            <button className="btn btn-danger btn-sm" onClick={() => { onDelete(q.id); onClose() }} style={{ marginLeft: 8 }}>🗑 Eliminar cotización</button>
+          </div>
         </div>
       </div>
     </div>
